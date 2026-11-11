@@ -1,0 +1,20 @@
+# Generated addon packages and build output
+/*.zip
+/build/
+/dist/
+/assets/*-icon-preview.png
+
+# Python test environments and caches
+/.venv/
+/venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Temporary files and OS metadata
+*.tmp
+*.temp
+*~
+.DS_Store
+Thumbs.db
+Desktop.ini

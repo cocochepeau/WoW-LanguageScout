@@ -1,0 +1,9 @@
+Generator: built-in image_gen tool
+Edit target: assets/wowlingo-logo.png
+Transparent background: false
+
+Use case: text-localization / logo-brand edit.
+Edit target: the provided existing addon logo.
+Replace only the bottom wordmark "WoWLingo" with the exact new name "LanguageScout", one word with capital L and S, spelled L a n g u a g e S c o u t.
+Match the existing polished antique-gold beveled fantasy lettering. Fit the new longer wordmark cleanly inside the existing lower text area, with adequate margins and excellent legibility.
+Preserve the existing interlocking speech-bubble/globe emblem above, its shape, gold metal materials, lighting, dark textured background, square composition, and overall design. Do not add any other text. Do not retain the old name. Deliver one finished logo.

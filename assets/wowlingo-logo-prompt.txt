@@ -1,0 +1,11 @@
+Generator: built-in image_gen tool
+Transparent background: false
+
+Use case: logo-brand.
+Asset type: finished square logo and CurseForge project avatar.
+Create a polished original logo for "WoWLingo", a World of Warcraft addon that identifies player languages and shares language information with guild and group members.
+Subject: a bold, distinctive high-fantasy communication emblem made from two interlocking speech bubbles, with their geometry suggesting a W. Incorporate a simple globe meridian motif into one bubble to convey languages. Use strong silhouettes and broad negative spaces so the emblem remains recognizable at small addon-icon sizes.
+Style: professional illustrated game UI insignia, crisp vector-like contours, restrained forged-metal bevels, warm antique gold against deep charcoal, inspired by the gold-edged dark fantasy game interface. Keep the emblem simple and confident rather than ornate.
+Composition: one centered emblem occupying most of the upper area, with a clean, clearly legible wordmark below. Square image, balanced proportions and generous safe padding. Subtle dark background with no distracting scene.
+Text (verbatim): "WoWLingo". Exact capitalization: W o W L i n g o. Original sturdy fantasy-serif lettering with excellent readability.
+Constraints: one final logo, no presentation board, no mockup, no extra text, no slogans, no watermark, no national flags.
