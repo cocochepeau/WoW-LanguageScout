@@ -44,7 +44,8 @@ local function GetPanelTitle(labelKey)
     return ADDON_TITLE .. ": " .. L(labelKey)
 end
 
-local function GetPlayerSourceDisplayName(source, selfReported)
+local function GetPlayerSourceDisplayName(source, selfReported, channelHint)
+    if source == "automatic" and channelHint then return L("PLAYER_SOURCE_CHANNEL") end
     if source == "sync" and selfReported then source = "confirmed" end
     return L(PLAYER_SOURCE_KEYS[source] or "PLAYER_SOURCE_LEGACY")
 end
@@ -352,6 +353,7 @@ PlaceCheckboxInGrid(displayFlagsInLFGCheckbox, helperText, 0, 2)
 local function RestoreRecommendedDefaults()
     LanguageScoutDB.myLanguage = nil
     LanguageScoutDB.autoDetect = true
+    LanguageScoutDB.autoDetectLanguageChannels = true
     for _, channel in ipairs(ns.CHAT_DETECTION_CHANNELS) do
         ns.SetChatDetectionChannelEnabled(channel.key, true)
         ns.SetOutgoingPrefixChannelEnabled(channel.key, true)
@@ -650,8 +652,9 @@ local function ShowKnownPlayerTooltip(row)
     GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
     GameTooltip:AddLine(entry.playerName, 1, 1, 1)
     GameTooltip:AddDoubleLine(L("LANGUAGE"), GetLanguageDisplayName(entry.lang), 1, 0.82, 0, 1, 1, 1)
-    GameTooltip:AddDoubleLine(L("ENTRY_SOURCE"), GetPlayerSourceDisplayName(entry.source, entry.selfReported), 1, 0.82, 0, 1, 1, 1)
+    GameTooltip:AddDoubleLine(L("ENTRY_SOURCE"), GetPlayerSourceDisplayName(entry.source, entry.selfReported, entry.channelHint), 1, 0.82, 0, 1, 1, 1)
     GameTooltip:AddDoubleLine(L("LAST_UPDATED"), FormatPlayerUpdatedAt(entry.updatedAt), 1, 0.82, 0, 1, 1, 1)
+    if entry.channelHint then GameTooltip:AddDoubleLine(L("CHANNEL_EVIDENCE"), entry.channelHint, 1, 0.82, 0, 1, 1, 1) end
     GameTooltip:Show()
 end
 
@@ -807,7 +810,7 @@ local function RenderKnownPlayerRows()
 
             SetKnownPlayerDisplayName(row, entry.playerName)
             row.languageText:SetText(GetLanguageDisplayName(entry.lang))
-            row.sourceText:SetText(GetPlayerSourceDisplayName(entry.source, entry.selfReported))
+            row.sourceText:SetText(GetPlayerSourceDisplayName(entry.source, entry.selfReported, entry.channelHint))
             row.removeButton:SetScript("OnClick", function()
                 RemovePlayerLanguage(entry.playerName)
                 RefreshKnownPlayers()
@@ -834,6 +837,7 @@ RefreshKnownPlayers = function()
                 lang = type(record) == "table" and record.lang or nil,
                 source = type(record) == "table" and record.source or nil,
                 selfReported = type(record) == "table" and record.selfReported == true or nil,
+                channelHint = type(record) == "table" and record.channelHint or nil,
                 updatedAt = type(record) == "table" and record.updatedAt or nil,
             }
         end, function(a, b)
@@ -1051,6 +1055,7 @@ autoHelperText:SetPoint("TOPLEFT", autoWordBox, "BOTTOMLEFT", 4, -8)
 autoHelperText:SetText(L("AUTO_DETECT_HELP"))
 
 local chatChannelCheckboxes = {}
+local languageChannelsCheckbox
 local function RefreshChatChannelControls()
     for _, channel in ipairs(ns.CHAT_DETECTION_CHANNELS) do
         local checkbox = chatChannelCheckboxes[channel.key]
@@ -1058,6 +1063,10 @@ local function RefreshChatChannelControls()
             checkbox:SetChecked(LanguageScoutDB.chatDetectionChannels[channel.key] ~= false)
             checkbox:SetEnabled(LanguageScoutDB.autoDetect ~= false)
         end
+    end
+    if languageChannelsCheckbox then
+        languageChannelsCheckbox:SetChecked(LanguageScoutDB.autoDetectLanguageChannels ~= false)
+        languageChannelsCheckbox:SetEnabled(LanguageScoutDB.autoDetect ~= false)
     end
 end
 
@@ -1092,9 +1101,13 @@ PlaceCheckboxInGrid(autoDetectChatCheckbox, autoHelperText, 0, 0)
 PlaceCheckboxInGrid(autoFeedbackCheckbox, autoHelperText, 1, 0)
 PlaceCheckboxInGrid(autoDetectPetNamesCheckbox, autoHelperText, 0, 1)
 PlaceCheckboxInGrid(autoDetectGuildNamesCheckbox, autoHelperText, 1, 1)
+languageChannelsCheckbox = CreateCheckbox(autoDetectPanel, autoHelperText, -10, "AUTO_DETECT_LANGUAGE_CHANNELS", function(self)
+    LanguageScoutDB.autoDetectLanguageChannels = self:GetChecked() and true or false
+end)
+PlaceCheckboxInGrid(languageChannelsCheckbox, autoHelperText, 0, 2)
 
 local chatChannelsTitle = autoDetectPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-chatChannelsTitle:SetPoint("TOPLEFT", autoHelperText, "BOTTOMLEFT", 0, -96)
+chatChannelsTitle:SetPoint("TOPLEFT", autoHelperText, "BOTTOMLEFT", 0, -136)
 chatChannelsTitle:SetText(L("AUTO_DETECT_CHANNELS"))
 
 for index, channel in ipairs(ns.CHAT_DETECTION_CHANNELS) do

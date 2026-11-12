@@ -2157,5 +2157,234 @@ test("Plater secret current labels and active-state flags are skipped", function
     equal(#blizzard.textures, 0)
 end)
 
+local function channelMessage(e, message, author, channelName, baseName, channelNumber, event)
+    event = event or "CHAT_MSG_CHANNEL"
+    local filters = e.filters[event]
+    return filters[#filters](nil, event, message, author or "Target Tester", "Common", channelName,
+        nil, nil, 0, channelNumber or 6, baseName, nil, 123, nil)
+end
+
+for _, sample in ipairs({
+    { "EN", "English" }, { "FR", "Français" }, { "DE", "Deutsch" }, { "ES", "Español" },
+    { "RU", "Русский" }, { "UA", "Українська" }, { "IT", "Italiano" }, { "SV", "Svenska" },
+    { "NO", "Norsk" }, { "DA", "Dansk" }, { "TR", "Türkçe" }, { "PL", "Polski" },
+    { "PT", "Português" }, { "NL", "Nederlands" }, { "CZSK", "Čeština" },
+}) do
+    test(sample[1] .. " language-labelled channels identify only an otherwise unknown sender", function()
+        local e = newAddon()
+        local channel = "Commerce - " .. sample[2] .. "16"
+        local blocked, returned, author = channelMessage(e, "...", "Target Tester", channel)
+        equal(blocked, false); equal(returned, "..."); equal(author, "Target Tester")
+        local record = e.LanguageScoutDB.players["Target Tester"]
+        equal(record.lang, sample[1]); equal(record.source, "automatic"); equal(record.channelHint, channel)
+        equal(e.LanguageScoutDB.players["Other Tester"], nil)
+        assert(e.messages[#e.messages]:find(string.format(e.ns.L("AUTO_REASON_LANGUAGE_CHANNEL"), channel), 1, true))
+        assert(e.messages[#e.messages]:find("|Hlanguagescoutundo:Target Tester:", 1, true))
+    end)
+end
+
+test("channel clues recognize localized names, codes, suffix numbers and canonical base metadata", function()
+    for _, name in ipairs({ "Trade - French16", "Commerce - Francais 16", "Handel - Französisch16",
+        "Comercio - Francés16", "Trade - FR16", "[6. Commerce - FRANÇAIS16]", "Trade – French16" }) do
+        local e = newAddon()
+        channelMessage(e, "...", "Target Tester", name)
+        equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR", name)
+    end
+    local e = newAddon()
+    channelMessage(e, "...", "Target Tester", "6. Trade - English16", "Commerce - Français16")
+    equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR")
+    equal(e.LanguageScoutDB.players["Target Tester"].channelHint, "Commerce - Français16")
+    e = newAddon()
+    channelMessage(e, "...", "Target Tester", "6. Commerce - Français16", "Trade")
+    equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR", "display metadata can supply a missing base label")
+end)
+
+test("ordinary localized, city and ambiguous channel names provide no language clue", function()
+    for _, name in ipairs({ "Commerce", "Commerce - Thunder Bluff", "Commerce (local) - Thunder Bluff",
+        "Général - Forêt d’Elwynn", "Trade - France16", "Trade - French Guild16", "Trade-French",
+        "French", "[FR]", "Trade - Unknown16", "Trade - Français16 - Stormwind", "" }) do
+        local e = newAddon(nil, true, nil, "frFR")
+        channelMessage(e, "...", "Target Tester", name)
+        equal(e.LanguageScoutDB.players["Target Tester"], nil, name)
+    end
+    local e = newAddon()
+    channelMessage(e, "", "Target Tester", "Commerce - Français16")
+    channelMessage(e, "   ", "Target Tester", "Commerce - Français16")
+    equal(e.LanguageScoutDB.players["Target Tester"], nil)
+    channelMessage(e, "...", "Target Tester", "Commerce - Français16", nil, nil, "CHAT_MSG_GUILD")
+    equal(e.LanguageScoutDB.players["Target Tester"], nil, "only public-channel messages use channel clues")
+end)
+
+test("channel clues respect their option, global, public-channel and per-language switches", function()
+    local e = newAddon()
+    local function absent()
+        channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+        equal(e.LanguageScoutDB.players["Target Tester"], nil)
+    end
+    e.LanguageScoutDB.autoDetectLanguageChannels = false; absent()
+    e.LanguageScoutDB.autoDetectLanguageChannels = true
+    e.LanguageScoutDB.autoDetect = false; absent()
+    e.LanguageScoutDB.autoDetect = true
+    e.ns.SetChatDetectionChannelEnabled("channel", false); absent()
+    e.ns.SetChatDetectionChannelEnabled("channel", true)
+    e.ns.SetLanguageAutoDetectEnabled("FR", false); absent()
+    e.ns.SetLanguageAutoDetectEnabled("FR", true)
+    channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+    equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR")
+    e.LanguageScoutDB.autoDetectLanguageChannels = false
+    e = newAddon(e.LanguageScoutDB)
+    equal(e.LanguageScoutDB.autoDetectLanguageChannels, false)
+    equal(e.LanguageScoutDB.players["Target Tester"].channelHint, "Commerce - Français16")
+    channelMessage(e, "...", "Other Tester", "Trade - English16")
+    equal(e.LanguageScoutDB.players["Other Tester"], nil)
+    channelMessage(e, "Can you invite me?", "Other Tester", "Commerce - Français16")
+    equal(e.LanguageScoutDB.players["Other Tester"].lang, "EN")
+end)
+
+test("message evidence takes priority over the channel on the first message", function()
+    for _, sample in ipairs({ { "[EN] ...", "EN" }, { "Suche Gruppe", "DE" }, { "Bonjour", "FR" } }) do
+        local e = newAddon()
+        channelMessage(e, sample[1], "Target Tester", "Commerce - Français16")
+        equal(e.LanguageScoutDB.players["Target Tester"].lang, sample[2])
+        equal(e.LanguageScoutDB.players["Target Tester"].channelHint, nil)
+    end
+end)
+
+test("repeated channel messages do not strengthen or overwrite channel guesses", function()
+    local e = newAddon()
+    channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+    local record = e.LanguageScoutDB.players["Target Tester"]
+    local messages, updatedAt = #e.messages, record.updatedAt
+    e.now = e.now + 10
+    channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+    channelMessage(e, "...", "Target Tester", "Trade - German16")
+    equal(e.LanguageScoutDB.players["Target Tester"], record)
+    equal(record.updatedAt, updatedAt)
+    equal(record.lang, "FR"); equal(#e.messages, messages)
+    equal(e.ns.GetRecordCounts().playerLanguages, 1)
+    equal(#e.sent, 0)
+end)
+
+test("later message evidence can correct or confirm a channel guess after reload", function()
+    for _, sample in ipairs({ { "Can you invite me?", "EN" }, { "[EN] ...", "EN" }, { "Bonjour", "FR" }, { "[FR] ...", "FR" } }) do
+        local e = newAddon()
+        channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+        e = newAddon(e.LanguageScoutDB)
+        e.IsInGuild = function() return true end
+        e.detect(sample[1], "Target Tester", "CHAT_MSG_PARTY")
+        local record = e.LanguageScoutDB.players["Target Tester"]
+        equal(record.lang, sample[2]); equal(record.channelHint, nil)
+        equal(e.sent[1].msg, "ENTRY:Target Tester:" .. sample[2])
+        channelMessage(e, "...", "Target Tester", "Trade - German16")
+        equal(e.LanguageScoutDB.players["Target Tester"].lang, sample[2])
+    end
+end)
+
+test("channel clues do not overwrite existing assignments or direct declarations", function()
+    for _, source in ipairs({ "manual", "automatic", "sync", "guild" }) do
+        local e = newAddon()
+        e.ns.SetPlayerLanguage("Target Tester", "DE", false, source)
+        channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+        equal(e.LanguageScoutDB.players["Target Tester"].lang, "DE")
+        equal(e.LanguageScoutDB.players["Target Tester"].source, source)
+    end
+    local e = newAddon()
+    channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+    e.receive("LANG:EN", "Target Tester", "WHISPER")
+    equal(e.LanguageScoutDB.players["Target Tester"].channelHint, nil)
+    equal(e.LanguageScoutDB.players["Target Tester"].selfReported, true)
+    channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+    equal(e.LanguageScoutDB.players["Target Tester"].lang, "EN")
+end)
+
+test("undo and Allow again govern channel guesses across reloads", function()
+    local e = newAddon()
+    channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+    e.hooks.SetItemRef("languagescoutundo:Target Tester:FR")
+    e = newAddon(e.LanguageScoutDB)
+    channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+    equal(e.LanguageScoutDB.players["Target Tester"], nil)
+    e.ns.AllowPlayerLanguageAgain("Target Tester", "FR")
+    channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+    equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR")
+end)
+
+test("channel metadata prevents stale mappings when channel numbers or cities change", function()
+    local e = newAddon()
+    channelMessage(e, "...", "First Tester", "Commerce - Français16", nil, 6)
+    channelMessage(e, "...", "Second Tester", "Trade - German16", nil, 6)
+    channelMessage(e, "...", "Third Tester", "Commerce (local) - Thunder Bluff", nil, 6)
+    equal(e.LanguageScoutDB.players["First Tester"].lang, "FR")
+    equal(e.LanguageScoutDB.players["Second Tester"].lang, "DE")
+    equal(e.LanguageScoutDB.players["Third Tester"], nil)
+end)
+
+test("secret and malformed channel metadata is never inspected or stored", function()
+    local e = newAddon()
+    local secret = {}
+    e.issecretvalue = function(value) return value == secret end
+    channelMessage(e, "...", "Target Tester", secret, secret)
+    equal(e.LanguageScoutDB.players["Target Tester"], nil)
+    for _, name in ipairs({ {}, 42, "Trade - Français16\n", "|cff00ff00Trade - Français16|r", string.rep("X", 170) .. " - French16" }) do
+        channelMessage(e, "...", "Target Tester", name)
+        equal(e.LanguageScoutDB.players["Target Tester"], nil)
+    end
+    channelMessage(e, "...", "Target Tester", secret, "Trade - French16")
+    equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR")
+end)
+
+test("weak channel guesses stay out of full synchronization until message evidence confirms them", function()
+    local e = newAddon()
+    e.IsInGuild = function() return true end
+    channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+    equal(#e.sent, 0)
+    e.ns.SetPlayerLanguage("Known Tester", "DE", false, "manual")
+    e.receive("SYNCREQ2", "Peer Tester", "GUILD")
+    e.advance(10)
+    local sawKnown = false
+    for _, packet in ipairs(e.sent) do
+        assert(not packet.msg:find("Target Tester", 1, true), packet.msg)
+        if packet.msg:find("Known Tester", 1, true) then sawKnown = true end
+    end
+    assert(sawKnown, "normal records must still be synchronized")
+end)
+
+test("database migration preserves only valid automatic channel provenance", function()
+    for _, hint in ipairs({ "", {}, 42, "bad\nchannel", "|cffffffffchannel", string.rep("x", 161) }) do
+        local e = newAddon({ players = { ["Target Tester"] = { lang = "FR", source = "automatic", updatedAt = 10, channelHint = hint } } })
+        equal(e.LanguageScoutDB.players["Target Tester"].channelHint, nil)
+    end
+    for _, source in ipairs({ "manual", "guild", "sync" }) do
+        local e = newAddon({ players = { ["Target Tester"] = { lang = "FR", source = source, updatedAt = 10, channelHint = "Trade - French16" } } })
+        equal(e.LanguageScoutDB.players["Target Tester"].channelHint, nil)
+    end
+end)
+
+for _, locale in ipairs({ "enUS", "deDE", "esES", "esMX", "frFR", "ruRU" }) do
+    test(locale .. " translates channel guesses, tooltips, and the opt-out setting", function()
+        local e = newAddon(nil, true, true, locale)
+        for _, key in ipairs({ "AUTO_DETECT_LANGUAGE_CHANNELS", "AUTO_REASON_LANGUAGE_CHANNEL", "PLAYER_SOURCE_CHANNEL", "CHANNEL_EVIDENCE" }) do
+            assert(e.ns.L(key) ~= key, key)
+        end
+        local checkbox = e.findCheckbox("AUTO_DETECT_LANGUAGE_CHANNELS")
+        equal(checkbox:GetChecked(), true)
+        checkbox:Click()
+        equal(e.LanguageScoutDB.autoDetectLanguageChannels, false)
+        checkbox:Click()
+        channelMessage(e, "...", "Target Tester", "Commerce - Français16")
+        e.categories[1].frame:Show()
+        local row = e.playerRows()[1]
+        equal(row.sourceText.text, e.ns.L("PLAYER_SOURCE_CHANNEL"))
+        row.scripts.OnEnter(row)
+        equal(e.GameTooltip.doubleLines[4][1], e.ns.L("CHANNEL_EVIDENCE"))
+        equal(e.GameTooltip.doubleLines[4][2], "Commerce - Français16")
+        e.findCheckbox("AUTO_DETECT_CHAT"):Click()
+        equal(checkbox.enabled, false)
+        e.StaticPopupDialogs.LANGUAGESCOUT_RESTORE_DEFAULTS.OnAccept()
+        equal(checkbox.enabled, true)
+        equal(checkbox:GetChecked(), true)
+    end)
+end
+
 print("Total: " .. passed .. " passed, " .. failed .. " failed")
 assert(failed == 0, "LanguageScout test failures")

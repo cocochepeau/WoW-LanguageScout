@@ -621,7 +621,7 @@ local function MarkPlayerLanguagesChanged()
     end
 end
 
-local function SetPlayerLanguageRecord(playerKey, lang, source, selfReported)
+local function SetPlayerLanguageRecord(playerKey, lang, source, selfReported, channelHint)
     if not playerKey or not lang or not source then
         return
     end
@@ -642,6 +642,7 @@ local function SetPlayerLanguageRecord(playerKey, lang, source, selfReported)
         source = source,
         updatedAt = GetCurrentTimestamp(),
         selfReported = selfReported and true or nil,
+        channelHint = source == "automatic" and type(channelHint) == "string" and channelHint or nil,
     }
 end
 
@@ -737,7 +738,7 @@ ns.AllowPlayerLanguageAgain = function(rawName, lang)
     return ClearPlayerLanguageRejection(playerKey, lang)
 end
 
-local function AddPlayerLanguageIfMissing(rawName, lang, source)
+local function AddPlayerLanguageIfMissing(rawName, lang, source, channelHint)
     if not IsSupportedLanguage(lang) then
         return false
     end
@@ -760,7 +761,7 @@ local function AddPlayerLanguageIfMissing(rawName, lang, source)
     end
 
     playerLanguageEntryCount = playerLanguageEntryCount + 1
-    SetPlayerLanguageRecord(playerKey, lang, source)
+    SetPlayerLanguageRecord(playerKey, lang, source, nil, channelHint)
     if source == "manual" then ClearPlayerLanguageRejection(playerKey, lang) end
     MarkPlayerLanguagesChanged()
     return true, playerKey
@@ -854,6 +855,14 @@ local function SetPlayerLanguage(playerKey, lang, syncEntry, source, selfReporte
         return false
     end
     if previousLang == lang then
+        -- Message evidence confirms a channel guess even when the language stays
+        -- the same. Remove the weak provenance before sharing the confirmed guess.
+        if source == "automatic" and previousRecord.source == "automatic" and previousRecord.channelHint then
+            SetPlayerLanguageRecord(playerKey, lang, source)
+            MarkPlayerLanguagesChanged()
+            if syncEntry then ns.SyncNewPlayerLanguage(playerKey, lang) end
+            return true
+        end
         if (source == "manual" or selfReported)
             and (previousRecord.source ~= source or previousRecord.selfReported ~= selfReported)
         then

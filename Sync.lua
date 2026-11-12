@@ -424,7 +424,7 @@ local function ContinueKnownLanguageBroadcast(distribution)
         state.nextEntryIndex = state.nextEntryIndex + 1
         scannedThisBatch = scannedThisBatch + 1
 
-        if IsSupportedLanguage(lang) and IsValidSyncedPlayerName(playerKey) then
+        if IsSupportedLanguage(lang) and not record.channelHint and IsValidSyncedPlayerName(playerKey) then
             local entry = ":" .. playerKey .. ":" .. lang
             if state.batch then
                 if #packet + #entry > SYNC_MESSAGE_BYTE_LIMIT then
@@ -491,7 +491,8 @@ local function StartKnownLanguageBroadcast(distribution, myPlayerKey, initialSen
     -- Read the current language at send time and skip removed records.
     local playerKeys = {}
     for playerName, record in pairs(LanguageScoutDB.players or {}) do
-        if playerName ~= myPlayerKey and type(record) == "table" and IsSupportedLanguage(record.lang) then
+        -- The legacy wire format cannot express channel-only confidence.
+        if playerName ~= myPlayerKey and type(record) == "table" and not record.channelHint and IsSupportedLanguage(record.lang) then
             playerKeys[#playerKeys + 1] = playerName
         end
     end

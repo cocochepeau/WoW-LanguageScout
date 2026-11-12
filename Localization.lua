@@ -22,6 +22,10 @@ local esLanguageLabels = {
 }
 
 local esLocalizedStrings = {
+    AUTO_DETECT_LANGUAGE_CHANNELS = "Usar el idioma del canal como indicio",
+    AUTO_REASON_LANGUAGE_CHANNEL = "idioma del canal \"%s\"",
+    PLAYER_SOURCE_CHANNEL = "Indicio del canal",
+    CHANNEL_EVIDENCE = "Canal de idioma",
     NAMEPLATES = "Placas de nombre",
     NAMEPLATES_DESCRIPTION = "Muestra banderas de idiomas conocidos junto a los nombres de jugadores en placas visibles. Activa las placas de jugadores en los ajustes de WoW. No se muestran en mascotas ni PNJ; las placas restringidas no se pueden modificar.",
     NAMEPLATE_FLAG_POSITION = "Posición de la bandera",
@@ -233,6 +237,10 @@ local LANGUAGE_LABELS_BY_LOCALE = {
 local LOCALIZED_STRINGS_BY_LOCALE = {
     deDE = {
         LANGUAGES = "Languages",
+        AUTO_DETECT_LANGUAGE_CHANNELS = "Sprachkanäle als Hinweis verwenden",
+        AUTO_REASON_LANGUAGE_CHANNEL = "Sprache des Kanals \"%s\"",
+        PLAYER_SOURCE_CHANNEL = "Kanalvermutung",
+        CHANNEL_EVIDENCE = "Sprachkanal",
         NAMEPLATES = "Namensplaketten",
         NAMEPLATES_DESCRIPTION = "Zeigt Flaggen bekannter Sprachen neben Spielernamen auf sichtbaren Namensplaketten. Aktiviere Spielernamensplaketten in den WoW-Einstellungen. Haustiere und NSCs sind ausgeschlossen; gesperrte Namensplaketten können nicht geändert werden.",
         NAMEPLATE_FLAG_POSITION = "Flaggenposition",
@@ -369,6 +377,10 @@ local LOCALIZED_STRINGS_BY_LOCALE = {
     },
     enUS = {
         LANGUAGES = "Languages",
+        AUTO_DETECT_LANGUAGE_CHANNELS = "Use language-labelled channels as a clue",
+        AUTO_REASON_LANGUAGE_CHANNEL = "language of channel \"%s\"",
+        PLAYER_SOURCE_CHANNEL = "Channel guess",
+        CHANNEL_EVIDENCE = "Language channel",
         NAMEPLATES = "Nameplates",
         NAMEPLATES_DESCRIPTION = "Shows known-language flags beside player names on visible nameplates. Enable player nameplates in WoW's settings. Pets and NPCs are excluded; restricted nameplates cannot be modified.",
         NAMEPLATE_FLAG_POSITION = "Flag position",
@@ -506,6 +518,10 @@ local LOCALIZED_STRINGS_BY_LOCALE = {
     esES = esLocalizedStrings,
     frFR = {
         LANGUAGES = "Languages",
+        AUTO_DETECT_LANGUAGE_CHANNELS = "Utiliser la langue des canaux comme indice",
+        AUTO_REASON_LANGUAGE_CHANNEL = "langue du canal \"%s\"",
+        PLAYER_SOURCE_CHANNEL = "Indice de canal",
+        CHANNEL_EVIDENCE = "Canal de langue",
         NAMEPLATES = "Plaques de nom",
         NAMEPLATES_DESCRIPTION = "Affiche les drapeaux des langues connues à côté des noms des joueurs sur les plaques visibles. Activez les plaques des joueurs dans les réglages de WoW. Les familiers et les PNJ sont exclus ; les plaques protégées ne peuvent pas être modifiées.",
         NAMEPLATE_FLAG_POSITION = "Position du drapeau",
@@ -642,6 +658,10 @@ local LOCALIZED_STRINGS_BY_LOCALE = {
     },
     ruRU = {
         LANGUAGES = "Languages",
+        AUTO_DETECT_LANGUAGE_CHANNELS = "Учитывать язык канала как подсказку",
+        AUTO_REASON_LANGUAGE_CHANNEL = "язык канала «%s»",
+        PLAYER_SOURCE_CHANNEL = "По каналу",
+        CHANNEL_EVIDENCE = "Языковой канал",
         NAMEPLATES = "Индикаторы здоровья",
         NAMEPLATES_DESCRIPTION = "Показывает флаги известных языков рядом с именами игроков на видимых индикаторах здоровья. Включите индикаторы игроков в настройках WoW. Питомцы и НИП исключены; защищённые индикаторы изменять нельзя.",
         NAMEPLATE_FLAG_POSITION = "Положение флага",
@@ -806,4 +826,12 @@ end
 
 function ns.GetLanguageDisplayName(lang)
     return languageLabels[lang] or lang or ns.L("UNKNOWN")
+end
+
+function ns.GetLanguageNameAliases()
+    local aliases = {}
+    for _, labels in pairs(LANGUAGE_LABELS_BY_LOCALE) do
+        for lang, name in pairs(labels) do aliases[name] = lang end
+    end
+    return aliases
 end

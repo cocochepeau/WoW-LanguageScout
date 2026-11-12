@@ -6,6 +6,7 @@ LanguageScout helps you find players who speak your language in WoW Forever and 
 
 - Detect languages from chat words and phrases, distinctive characters, and recognized Questie announcements.
 - Choose which chats to scan: public channels, guild, party, raid, instance group, say, and yell.
+- Optionally infer unknown senders from explicitly language-labelled channels, such as `Commerce - Français16`.
 - Enable optional detection from guild names and localized hunter pet names.
 - Mark players manually through their context menu or the settings page, and assign languages to guilds.
 - Share known languages with guild and group members who use the addon. Nearby friendly users can also announce their own language.
@@ -26,6 +27,14 @@ Without a supported leading tag, distinctive characters and recognized localized
 Multi-word phrases match complete words in order, allowing extra whitespace and punctuation, including typographic apostrophes and dashes. For example, `merci beaucoup`, `MERCI, BEAUCOUP!`, and `merci—beaucoup` match the same French phrase. Phrase words must occur in one message. Repeating a weak word does not increase its score.
 
 English, German, French, Spanish, Russian, Ukrainian, Italian, and Portuguese include additional conversational phrases for finding groups, invitations, missing roles, travel, thanks, and greetings. English uses multi-word phrases; isolated greetings and shared shorthand such as `hi`, `LFG`, `tank`, and `gg` do not identify English by themselves. You can add custom phrases in the automatic-detection settings.
+
+## Language-labelled channels
+
+**Automatic Detection → Use language-labelled channels as a clue** starts enabled and can be disabled independently. It also follows the chat-detection master switch, the **Public channels** switch, and each language's detection switch.
+
+For otherwise unknown senders with no clearer message evidence, a channel ending in an explicit language label, such as `Commerce - Français16` or `Trade - English16`, creates a low-confidence **Channel guess**. Recognized labels include supported language names and codes; ordinary localized channel names and city names are not language evidence. Each message's current channel metadata is used, so local channel-number changes do not leave stale mappings. No channel rosters are scanned.
+
+Hover the saved player to see the channel behind the guess. Later tags or clear message evidence can correct the guess or confirm the same language. Repeated neutral messages do not strengthen it, and manual assignments, confirmed languages, and undone guesses remain protected. Disabling this option stops new channel guesses without deleting saved entries. Channel-only guesses stay local until stronger evidence confirms them, since the sharing protocol cannot preserve their weaker confidence.
 
 ## Supported languages
 

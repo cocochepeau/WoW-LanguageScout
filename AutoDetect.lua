@@ -1813,10 +1813,42 @@ local function DetectLeadingLanguageTag(msg)
     return IsSupportedLanguage(tag) and tag or nil
 end
 
-local function DetectLanguage(msg, author, guid, event, channelName)
+local channelLanguageAliases = {}
+for alias, lang in pairs(ns.GetLanguageNameAliases()) do channelLanguageAliases[Lower(alias)] = lang end
+for _, lang in ipairs(SUPPORTED_LANGUAGES) do channelLanguageAliases[Lower(lang)] = lang end
+for alias, lang in pairs({ Francais = "FR", Italiano = "IT", ["Українська"] = "UA", Svenska = "SV",
+    Norsk = "NO", Dansk = "DA", ["Türkçe"] = "TR", Polski = "PL", ["Português"] = "PT",
+    Nederlands = "NL", ["Čeština"] = "CZSK", ["Slovenčina"] = "CZSK", ["CZ/SK"] = "CZSK", ["SK/CZ"] = "CZSK" }) do
+    channelLanguageAliases[Lower(alias)] = lang
+end
+local channelLanguageCache, channelLanguageCacheSize = {}, 0
+local function DetectLanguageFromChannelName(name)
+    if ns.IsSecret(name) or type(name) ~= "string" or name == "" or #name > 160 or name:find("[%c|]") then return end
+    local cached = channelLanguageCache[name]
+    if cached ~= nil then return cached or nil end
+    -- Match an explicit whole-language suffix, never the localized word Trade
+    -- or an arbitrary zone name. Forever appends a regional number, e.g. Français16.
+    local text = name:gsub("^%[", ""):gsub("%]$", ""):gsub("–", "-"):gsub("—", "-")
+    local suffix = text:match("^.+%s%-%s*(.-)%s*$")
+    local lang
+    if suffix then
+        suffix = suffix:gsub("%s*%d+%s*$", ""):gsub("^%s+", ""):gsub("%s+$", "")
+        lang = channelLanguageAliases[Lower(suffix)]
+    end
+    if channelLanguageCacheSize >= 128 then
+        wipe(channelLanguageCache)
+        channelLanguageCacheSize = 0
+    end
+    channelLanguageCache[name] = lang or false
+    channelLanguageCacheSize = channelLanguageCacheSize + 1
+    return lang
+end
+
+local function DetectLanguage(msg, author, guid, event, channelName, channelBaseName)
     if not ns.IsChatDetectionChannelEnabled(event) then
         return
     end
+    if type(msg) ~= "string" or not msg:find("%S") then return end
 
     local key = ResolveChatAuthorPlayerKey(author, guid)
     if not key then
@@ -1840,6 +1872,15 @@ local function DetectLanguage(msg, author, guid, event, channelName)
 
     local record = LanguageScoutDB.players[key]
     local currentLanguage = type(record) == "table" and record.lang or nil
+    if currentLanguage and record.source == "automatic" and record.channelHint then
+        -- Channel evidence never accumulates with repeated messages. A later
+        -- phrase/announcement can correct it, or confirm it and remove the hint.
+        local language, reason = DetectChatLanguage(msg)
+        if language and SetPlayerLanguage(key, language, true, "automatic") then
+            ShowAutoLanguageMarkedMessage(key, language, AddChatDetectionDetails(reason, event, channelName, msg), true)
+        end
+        return
+    end
     if currentLanguage then
         -- Require distinguishing evidence from the message to change an
         -- assignment. A name fallback must not undo a later correction.
@@ -1873,6 +1914,16 @@ local function DetectLanguage(msg, author, guid, event, channelName)
         TryAutoMarkPlayer(key, detectedLanguage, AddChatDetectionDetails(detectedReason, event, channelName, msg))
         return
     end
+    if event == "CHAT_MSG_CHANNEL" and LanguageScoutDB.autoDetectLanguageChannels ~= false then
+        local language, hintName = DetectLanguageFromChannelName(channelBaseName), channelBaseName
+        if not language then language, hintName = DetectLanguageFromChannelName(channelName), channelName end
+        if language and IsLanguageAutoDetectEnabled(language)
+            and AddPlayerLanguageIfMissing(key, language, "automatic", hintName)
+        then
+            local reason = string.format(L("AUTO_REASON_LANGUAGE_CHANNEL"), hintName)
+            ShowAutoLanguageMarkedMessage(key, language, AddChatDetectionDetails(reason, event, channelName, msg), true)
+        end
+    end
 end
 
 local function DetectionFilter(_, event, msg, author, ...)
@@ -1881,7 +1932,8 @@ local function DetectionFilter(_, event, msg, author, ...)
     local channelName = select(2, ...)
     if ns.IsSecret(channelName) then channelName = nil end
     local guid = select(10, ...)
-    DetectLanguage(msg, author, guid, event, channelName)
+    local channelBaseName = select(7, ...)
+    DetectLanguage(msg, author, guid, event, channelName, channelBaseName)
     if debugStart and ns.DebugPerfStop then
         ns.DebugPerfStop("AutoDetect:ChatFilter", debugStart, ResolveChatAuthorPlayerKey(author, guid))
     end

@@ -460,6 +460,11 @@ local function EnsurePlayerLanguagesTable()
             record.source = source
             record.updatedAt = updatedAt
             record.selfReported = source == "sync" and record.selfReported == true or nil
+            if source ~= "automatic" or type(record.channelHint) ~= "string"
+                or #record.channelHint > 160 or record.channelHint == "" or record.channelHint:find("[%c|]")
+            then
+                record.channelHint = nil
+            end
         end
     end
 
@@ -497,6 +502,7 @@ local function EnsureDatabaseDefaults()
     end
 
     LanguageScoutDB.autoDetect = LanguageScoutDB.autoDetect ~= false
+    LanguageScoutDB.autoDetectLanguageChannels = LanguageScoutDB.autoDetectLanguageChannels ~= false
     EnsureChatDetectionChannels()
     LanguageScoutDB.prefixOutgoingMessages = LanguageScoutDB.prefixOutgoingMessages ~= false
     EnsureOutgoingPrefixChannels()
