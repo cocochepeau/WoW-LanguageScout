@@ -1,0 +1,68 @@
+name: Release addon
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: python -m pip install -r tests/requirements.txt
+
+      - name: Test addon and packaging
+        run: |
+          python tests/run_tests.py
+          python -m unittest discover -s tests -p 'test_*.py'
+
+      - name: Build versioned ZIP
+        id: package
+        run: python scripts/build_release.py --github-output "$GITHUB_OUTPUT"
+
+      - name: Check for an existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.package.outputs.tag }}
+        run: |
+          gh api --paginate "repos/$GH_REPO/releases" --jq '.[].tag_name' > "$RUNNER_TEMP/release-tags"
+          if grep -Fxq -- "$RELEASE_TAG" "$RUNNER_TEMP/release-tags"; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $RELEASE_TAG already exists; leaving it unchanged." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish GitHub release
+        if: steps.existing.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ steps.package.outputs.tag }}
+          ADDON_VERSION: ${{ steps.package.outputs.version }}
+          ARCHIVE: ${{ steps.package.outputs.archive }}
+        run: |
+          gh release create "$RELEASE_TAG" "$ARCHIVE" \
+            --target "$GITHUB_SHA" \
+            --title "LanguageScout $ADDON_VERSION" \
+            --generate-notes
+          echo "Published LanguageScout $ADDON_VERSION with $ARCHIVE." >> "$GITHUB_STEP_SUMMARY"

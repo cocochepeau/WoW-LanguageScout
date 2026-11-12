@@ -61,3 +61,7 @@ python tests/run_tests.py
 ```
 
 The suite runs Lua 5.1 with mocked WoW APIs. Native UI and multiplayer behavior also need in-game verification.
+
+Build an installable ZIP locally with `python scripts/build_release.py`. The package is written to `dist/LanguageScout-<version>.zip`, with one `LanguageScout/` folder containing the runtime files and textures.
+
+On every push to `main`, GitHub Actions runs the tests and builds the ZIP. If the version in `LanguageScout.toc` has no release yet, it creates tag `v<version>` and publishes a GitHub release with the ZIP and generated release notes. Existing releases are left unchanged: bump `## Version` in the TOC to publish another release. The workflow can also be run manually on `main`.
