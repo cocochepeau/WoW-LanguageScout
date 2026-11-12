@@ -18,3 +18,6 @@ __pycache__/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# User-supplied reference addon; never part of LanguageScout
+/Plater/

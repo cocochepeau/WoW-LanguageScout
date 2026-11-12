@@ -1952,5 +1952,210 @@ for _, locale in ipairs({ "enUS", "deDE", "esES", "esMX", "frFR", "ruRU" }) do
     end)
 end
 
+local function attachPlaterPlate(plate, blizzardFrame, blizzardName, unit)
+    -- Shape from the supplied Plater-v663-Forever source: Plater.lua's frame
+    -- creation, UpdatePlateText, ShowHealthBar, and HideHealthBar paths.
+    local platerFrame = { unit = unit, namePlateUnitToken = unit, PlaterOnScreen = true,
+        textures = {}, shown = true, IsForbidden = blizzardFrame.IsForbidden,
+        CreateTexture = blizzardFrame.CreateTexture }
+    local healthBar = { textures = {}, shown = true, IsForbidden = blizzardFrame.IsForbidden,
+        CreateTexture = blizzardFrame.CreateTexture }
+    local function label(parent)
+        local name = {}
+        for key, value in pairs(blizzardName) do name[key] = value end
+        name.parent, name.shown = parent, true
+        function name:GetParent() return self.parent end
+        function name:IsVisible() return self.shown and self.parent.shown end
+        return name
+    end
+    local regular = label(healthBar)
+    local special = label(platerFrame)
+    special.shown = false
+    platerFrame.healthBar, platerFrame.unitName = healthBar, regular
+    platerFrame.ActorNameSpecial = special
+    healthBar.unitName = regular
+    plate.unitFrame, plate.CurrentUnitNameString = platerFrame, regular
+    plate.ActorNameSpecial = special
+    blizzardName.shown = false
+    return platerFrame, healthBar, regular, special
+end
+
+test("Plater flags use the active health-bar name and inherit its parent", function()
+    local e = nameplateFixture()
+    local plate, blizzard, blizzardName = e.addPlate("nameplate1", "Target Tester")
+    local plater, healthBar, name = attachPlaterPlate(plate, blizzard, blizzardName, "nameplate1")
+    name.justify = "LEFT"
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    e.ns.SetNameplateFlagPosition("left")
+    local flag = healthBar.textures[1]
+    equal(flag.shown, true)
+    equal(flag.parent, healthBar)
+    equal(flag.point[2], name)
+    equal(flag.point[1], "RIGHT")
+    equal(flag.point[4], -4)
+    equal(#blizzard.textures, 0, "Plater must not use the hidden Blizzard name")
+    equal(#plater.textures, 0)
+    e.ns.SetNameplateFlagPosition("right")
+    equal(flag.point[1], "LEFT")
+    equal(flag.point[4], -36)
+    e.ns.SetPlayerLanguage("Target Tester", "EN", false, "manual")
+    e.plateTick()
+    equal(flag.texture, "Interface\\AddOns\\LanguageScout\\flags\\EN.tga")
+    e.ns.SetNameplateFlagPosition("off")
+    equal(flag.shown, false)
+end)
+
+test("Plater name-only mode switches labels without stale health-bar flags", function()
+    local e = nameplateFixture()
+    local plate, blizzard, blizzardName = e.addPlate("nameplate1", "Target Tester")
+    local plater, healthBar, regular, special = attachPlaterPlate(plate, blizzard, blizzardName, "nameplate1")
+    e.ns.SetPlayerLanguage("Target Tester", "DE", false, "manual")
+    e.ns.SetNameplateFlagPosition("left")
+    local regularFlag = healthBar.textures[1]
+    plate.CurrentUnitNameString, healthBar.shown, regular.shown = special, false, false
+    special.shown = true
+    e.plateTick()
+    local specialFlag = plater.textures[1]
+    equal(regularFlag.shown, false)
+    equal(specialFlag.shown, true)
+    equal(specialFlag.parent, plater)
+    equal(specialFlag.point[2], special)
+    e.ns.SetNameplateFlagPosition("right")
+    equal(specialFlag.point[1], "LEFT")
+    plate.CurrentUnitNameString, healthBar.shown, regular.shown = regular, true, true
+    special.shown = false
+    e.plateTick()
+    equal(regularFlag.shown, true)
+    equal(specialFlag.shown, false)
+    equal(#healthBar.textures, 1)
+    equal(#plater.textures, 1)
+    e.ns.SetNameplateFlagPosition("off")
+    equal(regularFlag.shown, false)
+    equal(specialFlag.shown, false)
+end)
+
+test("Plater and Blizzard plates work together including native plate-type fallback", function()
+    local e = nameplateFixture()
+    local platerPlate, oldFrame, oldName = e.addPlate("nameplate1", "Target Tester")
+    local plater, healthBar = attachPlaterPlate(platerPlate, oldFrame, oldName, "nameplate1")
+    local _, nativeFrame = e.addPlate("nameplate2", "Other Tester")
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    e.ns.SetPlayerLanguage("Other Tester", "EN", false, "manual")
+    e.ns.SetNameplateFlagPosition("right")
+    equal(healthBar.textures[1].shown, true)
+    equal(nativeFrame.textures[1].shown, true)
+    equal(nativeFrame.textures[1].texture, "Interface\\AddOns\\LanguageScout\\flags\\EN.tga")
+    plater.PlaterOnScreen = false
+    oldName.shown = true
+    e.plateTick()
+    equal(healthBar.textures[1].shown, false)
+    equal(oldFrame.textures[1].shown, true)
+    equal(nativeFrame.textures[1].shown, true)
+end)
+
+test("late Plater initialization replaces an existing Blizzard flag", function()
+    local e = nameplateFixture()
+    local plate, blizzard, blizzardName = e.addPlate("nameplate1", "Target Tester")
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    e.ns.SetNameplateFlagPosition("left")
+    local oldFlag = blizzard.textures[1]
+    equal(oldFlag.shown, true)
+    local _, healthBar = attachPlaterPlate(plate, blizzard, blizzardName, "nameplate1")
+    e.emit("ADDON_LOADED", "Plater")
+    equal(oldFlag.shown, false)
+    equal(healthBar.textures[1].shown, true)
+    equal(healthBar.textures[1].point[2], plate.CurrentUnitNameString)
+end)
+
+test("Plater name aliases and unit-token seeding tolerate incomplete setup", function()
+    local e = nameplateFixture()
+    local plate, blizzard, blizzardName = e.addPlate("nameplate1", "Target Tester")
+    local plater, healthBar, name = attachPlaterPlate(plate, blizzard, blizzardName, "nameplate1")
+    plate.GetUnit, plate.namePlateUnitToken = nil, nil
+    plate.CurrentUnitNameString = nil
+    plater.unit = nil
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    e.ns.SetNameplateFlagPosition("left")
+    equal(healthBar.textures[1].shown, true)
+    equal(healthBar.textures[1].point[2], name)
+    healthBar.unitName = nil
+    e.plateTick()
+    equal(healthBar.textures[1].shown, true, "unitFrame.unitName alias must remain usable")
+    plater.namePlateUnitToken = "nameplate99"
+    e.plateTick()
+    equal(healthBar.textures[1].shown, false, "a stale unit token must not show another player's flag")
+end)
+
+test("Plater hidden current names do not fall back to another visible label", function()
+    local e = nameplateFixture()
+    local plate, blizzard, blizzardName = e.addPlate("nameplate1", "Target Tester")
+    local _, healthBar, name, special = attachPlaterPlate(plate, blizzard, blizzardName, "nameplate1")
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    e.ns.SetNameplateFlagPosition("left")
+    local flag = healthBar.textures[1]
+    name.shown, special.shown, blizzardName.shown = false, true, true
+    e.plateTick()
+    equal(flag.shown, false)
+    equal(#blizzard.textures, 0)
+    name.shown, healthBar.shown = true, false
+    e.plateTick()
+    equal(flag.shown, false, "a hidden health-bar parent must not leave a flag")
+end)
+
+test("Plater pooled plates clear flags when the unit becomes unknown or a pet", function()
+    local e = nameplateFixture()
+    e.LanguageScoutDB.autoDetectPetNames = false
+    local plate, blizzard, blizzardName = e.addPlate("nameplate1", "Target Tester")
+    local _, healthBar = attachPlaterPlate(plate, blizzard, blizzardName, "nameplate1")
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    e.ns.SetNameplateFlagPosition("right")
+    local flag = healthBar.textures[1]
+    e.emit("NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    equal(flag.shown, false)
+    e.units.nameplate1.name = "Unknown Tester"
+    e.emit("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    equal(flag.shown, false)
+    e.units.nameplate1.name = "Target Tester"
+    e.units.nameplate1.player = false
+    e.emit("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    equal(flag.shown, false)
+end)
+
+test("Plater restricted frames, parents and labels remain untouched", function()
+    for _, target in ipairs({ "plate", "plater", "parent", "name" }) do
+        local e = nameplateFixture()
+        local plate, blizzard, blizzardName = e.addPlate("nameplate1", "Target Tester")
+        local plater, healthBar, name = attachPlaterPlate(plate, blizzard, blizzardName, "nameplate1")
+        if target == "plate" then plate.forbidden = true
+        elseif target == "plater" then plater.forbidden = true
+        elseif target == "parent" then healthBar.forbidden = true
+        else name.forbidden = true end
+        e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+        e.ns.SetNameplateFlagPosition("left")
+        equal(#healthBar.textures, 0)
+        equal(#plater.textures, 0)
+        equal(#blizzard.textures, 0)
+    end
+end)
+
+test("Plater secret current labels and active-state flags are skipped", function()
+    local e = nameplateFixture()
+    local secret = {}
+    e.issecretvalue = function(value) return value == secret end
+    local plate, blizzard, blizzardName = e.addPlate("nameplate1", "Target Tester")
+    local plater, healthBar = attachPlaterPlate(plate, blizzard, blizzardName, "nameplate1")
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    e.ns.SetNameplateFlagPosition("left")
+    local flag = healthBar.textures[1]
+    plate.CurrentUnitNameString = secret
+    e.plateTick()
+    equal(flag.shown, false)
+    plate.CurrentUnitNameString = healthBar.unitName
+    plater.PlaterOnScreen = secret
+    e.plateTick()
+    equal(flag.shown, false)
+    equal(#blizzard.textures, 0)
+end)
+
 print("Total: " .. passed .. " passed, " .. failed .. " failed")
 assert(failed == 0, "LanguageScout test failures")

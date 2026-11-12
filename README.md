@@ -57,9 +57,11 @@ Messages sent through the chat edit box receive your effective-language tag, for
 
 Open **LanguageScout → Nameplates** and choose **Off**, **Left**, or **Right**. The default is **Off**. Flags use saved player languages and update as assignments change; unknown players, pets, and NPCs have no flag. The setting is independent of chat and tooltip flags.
 
-Player nameplates must be enabled in WoW. This feature attaches flags to Blizzard nameplate names, not the plain world-rendered floating names. Restricted nameplates, including some friendly plates, are skipped. Other addons that replace Blizzard's nameplate frames may need separate support.
+Player nameplates must be enabled in WoW. Blizzard nameplates and Plater are supported, including Plater's regular labels and name-only mode. Flags follow the active label and its parent visibility/fading. This feature does not modify the plain world-rendered floating names. Restricted nameplates, including some friendly plates, are skipped. Other nameplate replacements may need separate support.
 
 To test in game, enable friendly player nameplates, mark a nearby player manually, and switch **Left → Right → Off**. Check that the flag follows the name, changes when you change the language, disappears when you remove the assignment, and stays absent on pets/NPCs. Walk away and return to check reused nameplates, then reload to confirm the selected position persists.
+
+With Plater enabled, also test its normal health-bar names and name-only mode. Disabling Plater should leave Blizzard nameplate flags working. The local `Plater/` source reference is excluded from Git and release ZIPs; LanguageScout does not bundle Plater or its libraries.
 
 ## Commands
 

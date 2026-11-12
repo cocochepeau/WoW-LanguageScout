@@ -1,11 +1,12 @@
 ## Interface: 20506, 16001
 ## Title: LanguageScout
 ## Author: Acediar
-## Version: 1.0.5
+## Version: 1.0.6
 ## Notes: Identify and share player languages in chat and tooltips.
 ## IconTexture: Interface\AddOns\LanguageScout\assets\LanguageScout.tga
 ## SavedVariables: LanguageScoutDB
 ## SavedVariablesPerCharacter: LanguageScoutCharacterDB
+## OptionalDeps: Plater
 
 Localization.lua
 Core.lua

@@ -26,6 +26,7 @@ class ReleaseTests(unittest.TestCase):
                 self.assertEqual(len([n for n in names if n.startswith("LanguageScout/flags/")]), 15)
                 self.assertFalse(any(n.endswith((".py", ".png", ".zip", ".yml")) for n in names))
                 self.assertFalse(any("/tests/" in n or "/.git/" in n for n in names))
+                self.assertFalse(any("/Plater/" in n for n in names))
                 package.extractall(directory)
             toc = (Path(directory) / "LanguageScout/LanguageScout.toc").read_text()
             self.assertIn(f"## Version: {version}", toc)
@@ -36,7 +37,7 @@ class ReleaseTests(unittest.TestCase):
     def test_missing_runtime_file_fails_before_creating_zip(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "addon"
-            shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns(".git", "dist", "*.zip", "__pycache__"))
+            shutil.copytree(ROOT, root, ignore=shutil.ignore_patterns(".git", "dist", "*.zip", "__pycache__", "Plater"))
             (root / "UIHooks.lua").unlink()
             with self.assertRaises(FileNotFoundError):
                 builder.build_release(root, Path(directory) / "output")

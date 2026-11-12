@@ -25,6 +25,36 @@ local function ClearUnit(unit)
     activeFlags[unit] = nil
 end
 
+local function ResolveNameplateRegions(plate)
+    -- Plater v663 uses a lowercase unitFrame and switches CurrentUnitNameString
+    -- between the regular health-bar label and ActorNameSpecial in name-only mode.
+    local platerFrame = plate.unitFrame
+    if ns.IsSecret(platerFrame) then return end
+    if platerFrame then
+        if not IsAccessible(platerFrame) then return end
+        local active = platerFrame.PlaterOnScreen
+        if ns.IsSecret(active) then return end
+        if active then
+            local name = plate.CurrentUnitNameString
+            if ns.IsSecret(name) then return end
+            if not name then
+                local healthBar = platerFrame.healthBar
+                if ns.IsSecret(healthBar) then return end
+                if healthBar then
+                    if not IsAccessible(healthBar) then return end
+                    name = healthBar.unitName
+                end
+                if ns.IsSecret(name) then return end
+                if not name then name = platerFrame.unitName end
+            end
+            return platerFrame, name
+        end
+    end
+    -- Plater can leave selected plate types under Blizzard's control.
+    local unitFrame = plate.UnitFrame
+    if IsAccessible(unitFrame) then return unitFrame, unitFrame.name end
+end
+
 local function UpdateUnit(unit)
     ClearUnit(unit)
     if not ns.CanInspectUnit(unit) or not UnitIsPlayer(unit) then return end
@@ -32,14 +62,23 @@ local function UpdateUnit(unit)
     -- Never request forbidden plates, even when the client exposes that option.
     local plate = C_NamePlate.GetNamePlateForUnit(unit, false)
     if not IsAccessible(plate) then return end
-    local unitFrame = plate.UnitFrame
+    local unitFrame, name = ResolveNameplateRegions(plate)
     if not IsAccessible(unitFrame) then return end
     local displayedUnit = unitFrame.unit
+    if not ns.IsSecret(displayedUnit) and not displayedUnit then displayedUnit = unitFrame.namePlateUnitToken end
     if ns.IsSecret(displayedUnit) or (displayedUnit and displayedUnit ~= unit) then return end
-    local name = unitFrame.name
     if not IsAccessible(name) or not name.IsShown then return end
     local shown = name:IsShown()
     if ns.IsSecret(shown) or not shown then return end
+    if name.IsVisible then
+        local visible = name:IsVisible()
+        if ns.IsSecret(visible) or not visible then return end
+    end
+    -- Share the label's parent so flags inherit the same visibility and alpha,
+    -- including when Plater hides its health bar or uses a special name label.
+    local parent = unitFrame
+    if name.GetParent then parent = name:GetParent() end
+    if not IsAccessible(parent) then return end
 
     local playerName, realm = ns.ReadUnitName(unit)
     local key = playerName and ns.FullName(playerName, realm)
@@ -64,11 +103,11 @@ local function UpdateUnit(unit)
         offset = unusedWidth
     end
 
-    local flag = flags[unitFrame]
+    local flag = flags[parent]
     if not flag then
-        if not unitFrame.CreateTexture then return end
-        flag = unitFrame:CreateTexture(nil, "OVERLAY")
-        flags[unitFrame] = flag
+        if not parent.CreateTexture then return end
+        flag = parent:CreateTexture(nil, "OVERLAY", nil, 7)
+        flags[parent] = flag
         flag:SetSize(18, 12)
     end
     if not IsAccessible(flag) then return end
@@ -114,6 +153,10 @@ ns.RefreshNameplateFlags = function()
                 if plate.GetUnit then unit = plate:GetUnit() end
                 if not ns.IsSecret(unit) then
                     if not unit then unit = plate.namePlateUnitToken end
+                    if not ns.IsSecret(unit) and not unit then
+                        local platerFrame = plate.unitFrame
+                        if IsAccessible(platerFrame) then unit = platerFrame.namePlateUnitToken end
+                    end
                     if not ns.IsSecret(unit) and type(unit) == "string" then trackedUnits[unit] = true end
                 end
             end
