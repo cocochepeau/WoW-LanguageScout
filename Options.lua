@@ -235,6 +235,7 @@ local syncPanel = CreateFrame("Frame")
 local guildPanel = CreateFrame("Frame")
 local resetPanel = CreateFrame("Frame")
 local undonePanel = CreateFrame("Frame")
+local outgoingPanel = CreateFrame("Frame")
 
 -- Settings canvas frames must start hidden so their first category visit
 -- reliably produces OnShow and initializes the page immediately.
@@ -245,6 +246,7 @@ syncPanel:Hide()
 guildPanel:Hide()
 resetPanel:Hide()
 undonePanel:Hide()
+outgoingPanel:Hide()
 
 local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 title:SetPoint("TOPLEFT", 16, -16)
@@ -264,6 +266,7 @@ ns.RefreshOwnLanguageDisplay = function()
     local languageName = ns.IsSupportedLanguage(lang) and GetLanguageDisplayName(lang)
         or L("EFFECTIVE_LANGUAGE_UNAVAILABLE")
     effectiveLanguageText:SetText(string.format(L("EFFECTIVE_LANGUAGE"), languageName))
+    if ns.RefreshOutgoingPrefixPanel then ns.RefreshOutgoingPrefixPanel() end
 end
 
 InitializeLanguageDropdown(dropdown, true,
@@ -349,7 +352,9 @@ local function RestoreRecommendedDefaults()
     LanguageScoutDB.autoDetect = true
     for _, channel in ipairs(ns.CHAT_DETECTION_CHANNELS) do
         ns.SetChatDetectionChannelEnabled(channel.key, true)
+        ns.SetOutgoingPrefixChannelEnabled(channel.key, true)
     end
+    LanguageScoutDB.prefixOutgoingMessages = true
     LanguageScoutDB.syncGuild = true
     LanguageScoutDB.syncParty = true
     LanguageScoutDB.autoMarkFeedback = true
@@ -1677,12 +1682,63 @@ wipeAllDataButton:SetScript("OnClick", function()
     StaticPopup_Show("LANGUAGESCOUT_WIPE_ALL_DATA")
 end)
 
+do
+    local outgoingTitle = outgoingPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    outgoingTitle:SetPoint("TOPLEFT", 16, -16)
+    outgoingTitle:SetText(GetPanelTitle("OUTGOING_MESSAGES"))
+
+    local description = outgoingPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    description:SetPoint("TOPLEFT", outgoingTitle, "BOTTOMLEFT", 0, -12)
+    description:SetWidth(560)
+    description:SetJustifyH("LEFT")
+    description:SetText(L("OUTGOING_MESSAGES_DESCRIPTION"))
+
+    local master = CreateCheckbox(outgoingPanel, description, -16, "PREFIX_OUTGOING_MESSAGES", function(self)
+        LanguageScoutDB.prefixOutgoingMessages = self:GetChecked() and true or false
+        ns.RefreshOutgoingPrefixPanel()
+    end)
+
+    local preview = outgoingPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    preview:SetPoint("TOPLEFT", master, "BOTTOMLEFT", 4, -12)
+    preview:SetWidth(560)
+    preview:SetJustifyH("LEFT")
+
+    local channelsTitle = outgoingPanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    channelsTitle:SetPoint("TOPLEFT", preview, "BOTTOMLEFT", 0, -24)
+    channelsTitle:SetText(L("OUTGOING_PREFIX_CHANNELS"))
+
+    local checkboxes = {}
+    for index, channel in ipairs(ns.CHAT_DETECTION_CHANNELS) do
+        local checkbox = CreateCheckbox(outgoingPanel, channelsTitle, -10, channel.labelKey, function(self)
+            ns.SetOutgoingPrefixChannelEnabled(channel.key, self:GetChecked())
+        end)
+        PlaceCheckboxInGrid(checkbox, channelsTitle, (index - 1) % 2, math.floor((index - 1) / 2))
+        checkboxes[channel.key] = checkbox
+    end
+
+    ns.RefreshOutgoingPrefixPanel = function()
+        local enabled = LanguageScoutDB.prefixOutgoingMessages ~= false
+        master:SetChecked(enabled)
+        local language = ns.GetOwnEffectiveLanguage()
+        local tag = ns.IsSupportedLanguage(language) and ("[" .. language .. "]")
+            or L("EFFECTIVE_LANGUAGE_UNAVAILABLE")
+        preview:SetText(string.format(L("OUTGOING_PREFIX_PREVIEW"), tag))
+        for key, checkbox in pairs(checkboxes) do
+            checkbox:SetChecked(LanguageScoutDB.outgoingPrefixChannels[key] ~= false)
+            checkbox:SetEnabled(enabled)
+        end
+    end
+    outgoingPanel:SetScript("OnShow", ns.RefreshOutgoingPrefixPanel)
+    ns.RefreshOutgoingPrefixPanel()
+end
+
 category = Settings.RegisterCanvasLayoutCategory(panel, "LanguageScout")
 Settings.RegisterAddOnCategory(category)
 
 languagesCategory = RegisterPanelCategory(category, languagesPanel, "LANGUAGES")
 autoCategory = RegisterPanelCategory(category, autoDetectPanel, "AUTO_DETECT")
 syncCategory = RegisterPanelCategory(category, syncPanel, "SYNC")
+RegisterPanelCategory(category, outgoingPanel, "OUTGOING_MESSAGES")
 guildCategory = RegisterPanelCategory(category, guildPanel, "GUILD_ASSIGNMENTS")
 resetCategory = RegisterPanelCategory(category, resetPanel, "RESET")
 RegisterPanelCategory(category, undonePanel, "UNDONE_GUESSES")

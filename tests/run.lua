@@ -1,6 +1,6 @@
 -- Native Lua 5.1 can also run this from the addon directory: lua tests/run.lua
 local root = addonRoot or "."
-local files = { "Localization.lua", "Core.lua", "PlayerData.lua", "UIHooks.lua", "AutoDetect.lua", "Sync.lua", "Options.lua" }
+local files = { "Localization.lua", "Core.lua", "PlayerData.lua", "UIHooks.lua", "OutgoingChat.lua", "AutoDetect.lua", "Sync.lua", "Options.lua" }
 local manifest = assert(io.open(root .. "/LanguageScout.toc", "rb"))
 local addonVersion = assert(manifest:read("*a"):match("## Version:%s*([^\r\n]+)"))
 manifest:close()
@@ -103,9 +103,9 @@ local function installSettingsMocks(e)
     end
 end
 
-local function newAddon(savedDB, surnames, withSettings, locale, preferredSettings)
+local function newAddon(savedDB, surnames, withSettings, locale, preferredSettings, outgoingHookMode)
     if surnames == nil then surnames = true end
-    local env = setmetatable({ LanguageScoutDB = savedDB, usesSurnames = surnames, testLocale = locale or "enUS", preferredSettings = preferredSettings }, { __index = _G })
+    local env = setmetatable({ LanguageScoutDB = savedDB, usesSurnames = surnames, testLocale = locale or "enUS", preferredSettings = preferredSettings, outgoingHookMode = outgoingHookMode }, { __index = _G })
     env._G = env
     setfenv(function()
         ns, frames, filters, sent, timers, hooks, messages = {}, {}, {}, {}, {}, {}, {}
@@ -152,6 +152,15 @@ local function newAddon(savedDB, surnames, withSettings, locale, preferredSettin
         YES, NO = "Yes", "No"
         function SetItemRef() end
         function hooksecurefunc(name, f) hooks[name] = f end
+        function ChatEdit_ParseText() end
+        registryCallbacks = {}
+        EventRegistry = {
+            RegisterCallback = function(_, event, callback, owner)
+                registryCallbacks[event] = { callback = callback, owner = owner }
+            end,
+        }
+        if outgoingHookMode == "legacy" or outgoingHookMode == "late" then EventRegistry = nil end
+        if outgoingHookMode == "modern" or outgoingHookMode == "late" then ChatEdit_ParseText = nil end
         function CreateFrame()
             local f = { events = {}, scripts = {} }
             function f:RegisterEvent(e) self.events[e] = true end
@@ -1154,6 +1163,358 @@ test("version announcements identify the renamed product", function()
     equal(e.sent[1].msg, "VER:LanguageScout:" .. addonVersion)
     equal(e.sent[1].prefix, "LMARK")
 end)
+
+local function outgoingBox(message, chatType, maxBytes)
+    local box = { text = message, chatType = chatType, maxBytes = maxBytes, edits = 0 }
+    function box:GetText() return self.text end
+    function box:SetText(text) self.text = text; self.edits = self.edits + 1 end
+    function box:GetChatType() return self.chatType end
+    function box:GetAttribute(key) if key == "chatType" then return self.chatType end end
+    function box:GetMaxBytes() return self.maxBytes end
+    return box
+end
+
+local function outgoing(e, message, chatType, mode, maxBytes)
+    local box = outgoingBox(message, chatType, maxBytes)
+    if mode == "legacy" then
+        box.GetChatType = nil
+        assert(e.hooks.ChatEdit_ParseText)(box, 1)
+    else
+        local registered = assert(e.registryCallbacks["ChatFrame.OnEditBoxPreSendText"])
+        registered.callback(registered.owner, box)
+    end
+    return box.text, box
+end
+
+for _, mode in ipairs({ "legacy", "modern" }) do
+    for _, channel in ipairs({
+        { "channel", "CHANNEL" }, { "guild", "GUILD" }, { "party", "PARTY" },
+        { "raid", "RAID" }, { "instance", "INSTANCE_CHAT" }, { "say", "SAY" }, { "yell", "YELL" },
+    }) do
+        test(mode .. " outgoing " .. channel[1] .. " tags are enabled by default and individually optional", function()
+            local e = newAddon({ myLanguage = "FR" }, nil, nil, nil, nil, mode)
+            equal(outgoing(e, "Bonjour à tous !", channel[2], mode), "[FR] Bonjour à tous !")
+            equal(e.ns.SetOutgoingPrefixChannelEnabled(channel[1], false), true)
+            equal(outgoing(e, "Bonjour à tous !", channel[2], mode), "Bonjour à tous !")
+            e.ns.SetOutgoingPrefixChannelEnabled(channel[1], true)
+            equal(outgoing(e, "Bonjour à tous !", channel[2], mode), "[FR] Bonjour à tous !")
+        end)
+    end
+end
+
+test("outgoing opt-out and individual channel choices survive reload and default migration", function()
+    local e = newAddon({ myLanguage = "FR", prefixOutgoingMessages = false,
+        outgoingPrefixChannels = { guild = false, unknown = true } })
+    equal(outgoing(e, "hello", "SAY"), "hello")
+    equal(e.LanguageScoutDB.outgoingPrefixChannels.guild, false)
+    equal(e.LanguageScoutDB.outgoingPrefixChannels.say, true)
+    equal(e.LanguageScoutDB.outgoingPrefixChannels.unknown, nil)
+    equal(e.ns.SetOutgoingPrefixChannelEnabled("unknown", true), false)
+    e = newAddon(e.LanguageScoutDB)
+    equal(outgoing(e, "hello", "SAY"), "hello")
+    e.LanguageScoutDB.prefixOutgoingMessages = true
+    equal(outgoing(e, "hello", "SAY"), "[FR] hello")
+    equal(outgoing(e, "hello", "GUILD"), "hello")
+    e = newAddon({ myLanguage = "FR", outgoingPrefixChannels = "invalid" })
+    equal(outgoing(e, "hello", "SAY"), "[FR] hello")
+end)
+
+test("outgoing prefixes are independent of detection, display and synchronization settings", function()
+    local e = newAddon({ myLanguage = "DE", autoDetect = false, displayFlagsInChat = false,
+        syncGuild = false, syncParty = false, chatDetectionChannels = { guild = false } })
+    equal(outgoing(e, "hello", "GUILD"), "[DE] hello")
+    equal(#e.sent, 0)
+    e.ns.SetOutgoingPrefixChannelEnabled("say", false)
+    equal(e.ns.IsChatDetectionChannelEnabled("CHAT_MSG_SAY"), false)
+    e.LanguageScoutDB.autoDetect = true
+    equal(e.ns.IsChatDetectionChannelEnabled("CHAT_MSG_SAY"), true)
+end)
+
+test("outgoing tags follow manual language and current Forever preferred language", function()
+    local preference = { loaded = true, localeID = 2 }
+    local e = newAddon(nil, true, nil, "deDE", preference)
+    equal(outgoing(e, "hello", "SAY"), "[FR] hello")
+    preference.localeID = 1
+    equal(outgoing(e, "hello", "SAY"), "[DE] hello")
+    e.LanguageScoutDB.myLanguage = "ES"
+    equal(outgoing(e, "hello", "SAY"), "[ES] hello")
+    e.LanguageScoutDB.myLanguage = nil
+    preference.loaded = false
+    equal(outgoing(e, "hello", "SAY"), "hello")
+    preference.loaded = true; preference.localeID = 3
+    equal(outgoing(e, "hello", "SAY"), "hello")
+end)
+
+test("Anniversary outgoing tags follow its supported client language", function()
+    local e = newAddon(nil, false, nil, "frFR")
+    equal(outgoing(e, "hello", "SAY"), "[FR] hello")
+    e = newAddon(nil, false, nil, "enUS")
+    equal(outgoing(e, "hello", "SAY"), "hello")
+end)
+
+test("outgoing prefixes preserve explicit language tags and do not duplicate across hooks", function()
+    local e = newAddon({ myLanguage = "FR" })
+    for _, message in ipairs({ "[FR] hello", "[fr] hello", "  [DE] hello", "[EN] hello", "[CZSK] hello" }) do
+        equal(outgoing(e, message, "PARTY"), message)
+    end
+    equal(outgoing(e, "[LFG] tank", "CHANNEL"), "[FR] [LFG] tank")
+    local _, box = outgoing(e, "hello", "PARTY")
+    e.hooks.ChatEdit_ParseText(box, 1)
+    equal(box.text, "[FR] hello")
+    equal(box.edits, 1)
+end)
+
+test("outgoing hooks ignore whispers, emotes, commands and non-message chat types", function()
+    local e = newAddon({ myLanguage = "FR" })
+    for _, chatType in ipairs({ "WHISPER", "BN_WHISPER", "OFFICER", "RAID_WARNING", "EMOTE", "AFK", "DND", "UNKNOWN" }) do
+        equal(outgoing(e, "hello", chatType), "hello")
+    end
+    equal(outgoing(e, "hello", nil), "hello")
+    for _, message in ipairs({ "", "   ", "/reload", " /cast Fireball", "/ls", "/dance" }) do
+        equal(outgoing(e, message, "SAY"), message)
+    end
+    local box = outgoingBox("hello", "SAY")
+    e.hooks.ChatEdit_ParseText(box, 0)
+    equal(box.text, "hello", "typing must not insert a tag")
+    e.hooks.ChatEdit_ParseText(box, 1)
+    equal(box.text, "[FR] hello")
+end)
+
+test("outgoing prefixes keep complete UTF-8 text and links within the byte limit", function()
+    local e = newAddon({ myLanguage = "FR" })
+    local boundary = string.rep("é", 125)
+    equal(outgoing(e, boundary, "SAY"), "[FR] " .. boundary)
+    equal(outgoing(e, boundary .. "!", "SAY"), boundary .. "!")
+    equal(outgoing(e, "hello", "SAY", nil, 9), "hello")
+    equal(outgoing(e, "hello", "SAY", nil, 10), "[FR] hello")
+    equal(outgoing(e, "hello", "SAY", nil, 0), "[FR] hello")
+    local link = "|cffa335ee|Hitem:123:0:0:0|h[Test item]|h|r"
+    equal(outgoing(e, link, "PARTY"), "[FR] " .. link)
+    e.LanguageScoutDB.myLanguage = "CZSK"
+    equal(outgoing(e, "hello", "SAY"), "[CZSK] hello")
+end)
+
+test("outgoing hooks do not inspect secret text or chat types", function()
+    local e = newAddon({ myLanguage = "FR" })
+    local secret = {}
+    e.issecretvalue = function(value) return value == secret end
+    equal(outgoing(e, secret, "SAY"), secret)
+    equal(outgoing(e, "hello", secret), "hello")
+    local registered = e.registryCallbacks["ChatFrame.OnEditBoxPreSendText"]
+    registered.callback(registered.owner, secret)
+end)
+
+test("outgoing hooks register once and support a late-loading legacy chat parser", function()
+    local e = newAddon({ myLanguage = "FR" })
+    local legacy = e.hooks.ChatEdit_ParseText
+    local modern = e.registryCallbacks["ChatFrame.OnEditBoxPreSendText"]
+    e.emit("PLAYER_LOGIN"); e.emit("ADDON_LOADED", "OtherAddon")
+    equal(e.hooks.ChatEdit_ParseText, legacy)
+    equal(e.registryCallbacks["ChatFrame.OnEditBoxPreSendText"], modern)
+    e = newAddon({ myLanguage = "FR" }, nil, nil, nil, nil, "late")
+    equal(e.hooks.ChatEdit_ParseText, nil)
+    e.ChatEdit_ParseText = function() end
+    e.emit("ADDON_LOADED", "Blizzard_ChatFrameBase")
+    equal(outgoing(e, "hello", "SAY", "legacy"), "[FR] hello")
+end)
+
+local function outgoingPanel(e)
+    for _, category in ipairs(e.categories) do
+        if category.title == e.ns.L("OUTGOING_MESSAGES") then return category.frame end
+    end
+    error("missing outgoing settings page")
+end
+
+test("outgoing settings opt-out disables channel controls while retaining choices", function()
+    local e = newAddon({ myLanguage = "FR" }, true, true)
+    local panel = outgoingPanel(e)
+    panel:Show()
+    local master = e.findCheckbox("PREFIX_OUTGOING_MESSAGES")
+    local guild
+    for _, widget in ipairs(e.widgets) do
+        if widget.parent == panel and widget.kind == "CheckButton"
+            and widget.Text.text == e.ns.L("AUTO_DETECT_CHANNEL_GUILD") then guild = widget end
+    end
+    equal(master:GetChecked(), true)
+    guild:Click()
+    equal(e.LanguageScoutDB.outgoingPrefixChannels.guild, false)
+    master:Click()
+    equal(outgoing(e, "hello", "SAY"), "hello")
+    equal(guild.enabled, false)
+    master:Click()
+    equal(guild.enabled, true)
+    equal(guild:GetChecked(), false)
+    equal(outgoing(e, "hello", "SAY"), "[FR] hello")
+    equal(outgoing(e, "hello", "GUILD"), "hello")
+    e.StaticPopupDialogs.LANGUAGESCOUT_RESTORE_DEFAULTS.OnAccept()
+    equal(e.LanguageScoutDB.prefixOutgoingMessages, true)
+    equal(e.LanguageScoutDB.outgoingPrefixChannels.guild, true)
+    equal(guild:GetChecked(), true)
+end)
+
+for _, locale in ipairs({ "enUS", "deDE", "esES", "esMX", "frFR", "ruRU" }) do
+    test(locale .. " translates outgoing settings and updates the live prefix preview", function()
+        local e = newAddon(nil, true, true, locale)
+        local dropdown = ownLanguageDropdown(e)
+        e.selectDropdown(dropdown, "FR")
+        local panel = outgoingPanel(e)
+        panel:Show()
+        for _, key in ipairs({ "OUTGOING_MESSAGES", "OUTGOING_MESSAGES_DESCRIPTION",
+            "PREFIX_OUTGOING_MESSAGES", "OUTGOING_PREFIX_CHANNELS", "OUTGOING_PREFIX_PREVIEW" }) do
+            assert(e.ns.L(key) ~= key, key)
+        end
+        local function assertPreview(tag)
+            local expected = string.format(e.ns.L("OUTGOING_PREFIX_PREVIEW"), tag)
+            for _, widget in ipairs(e.widgets) do
+                if widget.parent == panel and widget.text == expected then return end
+            end
+            error("missing outgoing preview " .. expected)
+        end
+        assertPreview("[FR]")
+        e.selectDropdown(dropdown, "DE")
+        assertPreview("[DE]")
+        e.selectDropdown(dropdown, nil)
+        assertPreview(e.ns.L("EFFECTIVE_LANGUAGE_UNAVAILABLE"))
+    end)
+end
+
+for _, language in ipairs({ "DE", "ES", "RU", "UA", "FR", "IT", "SV", "NO", "DA", "TR", "PL", "PT", "NL", "CZSK" }) do
+    test(language .. " tags work for outgoing messages and incoming detection", function()
+        local e = newAddon({ myLanguage = language })
+        local message = outgoing(e, "...", "SAY")
+        equal(message, "[" .. language .. "] ...")
+        local blocked, returned, author = e.detect(message)
+        equal(blocked, false)
+        equal(returned, message)
+        equal(author, "Target Tester")
+        equal(e.LanguageScoutDB.players["Target Tester"].lang, language)
+        equal(e.LanguageScoutDB.players["Target Tester"].source, "automatic")
+        local reason = string.format(e.ns.L("AUTO_REASON_CHAT_PREFIX"), "[" .. language .. "]")
+        assert(e.messages[#e.messages]:find(reason, 1, true))
+        assert(e.messages[#e.messages]:find("|Hlanguagescoutundo:", 1, true))
+    end)
+end
+
+for _, channel in ipairs({
+    { "channel", "CHAT_MSG_CHANNEL" }, { "guild", "CHAT_MSG_GUILD" },
+    { "party", "CHAT_MSG_PARTY" }, { "party", "CHAT_MSG_PARTY_LEADER" },
+    { "raid", "CHAT_MSG_RAID" }, { "raid", "CHAT_MSG_RAID_LEADER" },
+    { "instance", "CHAT_MSG_INSTANCE_CHAT" }, { "instance", "CHAT_MSG_INSTANCE_CHAT_LEADER" },
+    { "say", "CHAT_MSG_SAY" }, { "yell", "CHAT_MSG_YELL" },
+}) do
+    test(channel[2] .. " leading tag detection follows its detection-channel switch", function()
+        local e = newAddon()
+        e.ns.SetChatDetectionChannelEnabled(channel[1], false)
+        e.detect("[FR] ...", "Target Tester", channel[2])
+        equal(e.LanguageScoutDB.players["Target Tester"], nil)
+        e.ns.SetChatDetectionChannelEnabled(channel[1], true)
+        e.detect("[FR] ...", "Target Tester", channel[2])
+        equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR")
+    end)
+end
+
+test("tag detection respects master and language switches independently of outgoing tags", function()
+    local e = newAddon({ prefixOutgoingMessages = false, outgoingPrefixChannels = { guild = false } })
+    e.LanguageScoutDB.autoDetect = false
+    e.detect("[FR] Bonjour", "Target Tester", "CHAT_MSG_GUILD")
+    equal(e.LanguageScoutDB.players["Target Tester"], nil)
+    e.LanguageScoutDB.autoDetect = true
+    e.ns.SetLanguageAutoDetectEnabled("FR", false)
+    e.detect("[FR] Suche Gruppe", "Target Tester", "CHAT_MSG_GUILD")
+    equal(e.LanguageScoutDB.players["Target Tester"], nil, "disabled tag must not become a different body guess")
+    e.ns.SetLanguageAutoDetectEnabled("FR", true)
+    e.detect("[FR] Suche Gruppe", "Target Tester", "CHAT_MSG_GUILD")
+    equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR")
+end)
+
+test("a leading tag takes priority over other language clues and sender-name clues", function()
+    local e = newAddon()
+    e.detect("[FR] Привіт друзі", "Іван Тест")
+    equal(e.LanguageScoutDB.players["Іван Тест"].lang, "FR")
+    e.detect("[DE] Bonjour", "Other Tester")
+    equal(e.LanguageScoutDB.players["Other Tester"].lang, "DE")
+end)
+
+test("tags correct inferred records but preserve manual and confirmed assignments", function()
+    for _, source in ipairs({ "automatic", "guild", "sync", "legacy" }) do
+        local e = newAddon({ players = { ["Target Tester"] = { lang = "DE", source = source, updatedAt = 10 } } })
+        e.detect("[FR] ...")
+        equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR")
+        equal(e.LanguageScoutDB.players["Target Tester"].source, "automatic")
+        local messages = #e.messages
+        e.detect("[FR] ...")
+        equal(#e.messages, messages, "repeat tags must not produce repeat feedback")
+    end
+    local e = newAddon()
+    e.ns.SetPlayerLanguage("Manual Tester", "DE", false, "manual")
+    e.ns.SetSelfReportedPlayerLanguage("Confirmed Tester", "DE")
+    e.detect("[FR] ...", "Manual Tester")
+    e.detect("[FR] ...", "Confirmed Tester")
+    equal(e.LanguageScoutDB.players["Manual Tester"].lang, "DE")
+    equal(e.LanguageScoutDB.players["Confirmed Tester"].lang, "DE")
+    equal(e.LanguageScoutDB.players["Confirmed Tester"].selfReported, true)
+end)
+
+test("undo rejects repeated tags until Allow again, including after reload", function()
+    local e = newAddon()
+    e.detect("[FR] ...")
+    e.hooks.SetItemRef("languagescoutundo:Target Tester:FR")
+    equal(e.LanguageScoutDB.players["Target Tester"], nil)
+    e = newAddon(e.LanguageScoutDB)
+    e.detect("[FR] ...")
+    equal(e.LanguageScoutDB.players["Target Tester"], nil)
+    e.ns.AllowPlayerLanguageAgain("Target Tester", "FR")
+    e.detect("[FR] ...")
+    equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR")
+end)
+
+test("tags accept case, whitespace and display markup, including existing flag filters", function()
+    for _, message in ipairs({ "[fr] ...", "  [FR] ...", "[FR]", "[FR]\t...",
+        "|cff00ff00[FR]|r ...", "|TInterface\\AddOns\\LanguageScout\\flags\\DE.tga:12:18:0:0|t [FR] ..." }) do
+        local e = newAddon()
+        e.detect(message)
+        equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR")
+    end
+    local e = newAddon()
+    e.ns.SetPlayerLanguage("Target Tester", "DE", false, "automatic")
+    local message, author = "[FR] ...", "Target Tester"
+    for _, filter in ipairs(e.filters.CHAT_MSG_PARTY) do
+        local blocked
+        blocked, message, author = filter(nil, "CHAT_MSG_PARTY", message, author)
+        equal(blocked, false)
+    end
+    equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR")
+end)
+
+test("non-leading, malformed, linked and unsupported tags do not identify a language", function()
+    for _, message in ipairs({ "... [FR]", "[FR]...", "[ FR ] ...", "[FRA] ...", "[XX] ...",
+        "[EN] ...", "[FR ...", "|Hitem:1|h[FR]|h ..." }) do
+        local e = newAddon()
+        e.detect(message)
+        equal(e.LanguageScoutDB.players["Target Tester"], nil, message)
+    end
+    local e = newAddon()
+    e.detect("[LFG] merci beaucoup")
+    equal(e.LanguageScoutDB.players["Target Tester"].lang, "FR", "normal text detection must remain available")
+end)
+
+test("tag detection preserves Anniversary identities and normal synchronization", function()
+    local e = newAddon(nil, false)
+    e.IsInGuild = function() return true end
+    e.detect("[FR] ...", "Target", "CHAT_MSG_GUILD")
+    equal(e.LanguageScoutDB.players["Target-TestRealm"].lang, "FR")
+    equal(e.sent[1].msg, "ENTRY:Target-TestRealm:FR")
+    equal(e.sent[1].distribution, "GUILD")
+end)
+
+for _, locale in ipairs({ "enUS", "deDE", "esES", "esMX", "frFR", "ruRU" }) do
+    test(locale .. " translates tag-detection feedback", function()
+        local e = newAddon(nil, true, nil, locale)
+        assert(e.ns.L("AUTO_REASON_CHAT_PREFIX") ~= "AUTO_REASON_CHAT_PREFIX")
+        e.detect("[FR] ...")
+        assert(e.messages[#e.messages]:find(string.format(e.ns.L("AUTO_REASON_CHAT_PREFIX"), "[FR]"), 1, true))
+    end)
+end
 
 print("Total: " .. passed .. " passed, " .. failed .. " failed")
 assert(failed == 0, "LanguageScout test failures")

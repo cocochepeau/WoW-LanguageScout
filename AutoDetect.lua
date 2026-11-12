@@ -1775,6 +1775,19 @@ local function DetectChatLanguage(msg)
     return lang, reason
 end
 
+local function DetectLeadingLanguageTag(msg)
+    if type(msg) ~= "string" then return end
+    -- Display filters (including our own flags) may decorate the message before
+    -- detection runs. Ignore texture/color markup, but never treat link text as a tag.
+    local text = msg:gsub("|T.-|t", ""):gsub("|A.-|a", "")
+        :gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    local tag = text:match("^%s*%[([A-Za-z]+)%]%s")
+        or text:match("^%s*%[([A-Za-z]+)%]$")
+    if not tag then return end
+    tag = tag:upper()
+    return IsSupportedLanguage(tag) and tag or nil
+end
+
 local function DetectLanguage(msg, author, guid, event, channelName)
     if not ns.IsChatDetectionChannelEnabled(event) then
         return
@@ -1782,6 +1795,21 @@ local function DetectLanguage(msg, author, guid, event, channelName)
 
     local key = ResolveChatAuthorPlayerKey(author, guid)
     if not key then
+        return
+    end
+
+    local taggedLanguage = DetectLeadingLanguageTag(msg)
+    if taggedLanguage then
+        -- An explicit leading tag takes priority over guesses from message text
+        -- and may correct an inferred record. Normal automatic-assignment guards
+        -- still protect manual/confirmed records and rejected player-language pairs.
+        if IsLanguageAutoDetectEnabled(taggedLanguage)
+            and SetPlayerLanguage(key, taggedLanguage, true, "automatic")
+        then
+            local reason = string.format(L("AUTO_REASON_CHAT_PREFIX"), "[" .. taggedLanguage .. "]")
+            ShowAutoLanguageMarkedMessage(key, taggedLanguage,
+                AddChatDetectionDetails(reason, event, channelName, msg), true)
+        end
         return
     end
 

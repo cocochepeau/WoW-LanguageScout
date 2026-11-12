@@ -371,6 +371,37 @@ ns.IsChatDetectionChannelEnabled = function(event)
     return type(channels) ~= "table" or channels[key] ~= false
 end
 
+local OUTGOING_CHANNEL_KEYS = {
+    CHANNEL = "channel", GUILD = "guild", PARTY = "party", RAID = "raid",
+    INSTANCE_CHAT = "instance", SAY = "say", YELL = "yell",
+}
+
+local function EnsureOutgoingPrefixChannels()
+    if type(LanguageScoutDB.outgoingPrefixChannels) ~= "table" then
+        LanguageScoutDB.outgoingPrefixChannels = {}
+    end
+    local channels = LanguageScoutDB.outgoingPrefixChannels
+    for key in pairs(channels) do
+        if not chatDetectionChannelKeys[key] then channels[key] = nil end
+    end
+    for key in pairs(chatDetectionChannelKeys) do
+        channels[key] = channels[key] ~= false
+    end
+end
+
+ns.SetOutgoingPrefixChannelEnabled = function(key, enabled)
+    if not chatDetectionChannelKeys[key] then return false end
+    EnsureOutgoingPrefixChannels()
+    LanguageScoutDB.outgoingPrefixChannels[key] = enabled and true or false
+    return true
+end
+
+ns.IsOutgoingPrefixChannelEnabled = function(chatType)
+    if LanguageScoutDB.prefixOutgoingMessages == false or ns.IsSecret(chatType) then return false end
+    local key = OUTGOING_CHANNEL_KEYS[chatType]
+    return key ~= nil and LanguageScoutDB.outgoingPrefixChannels[key] ~= false
+end
+
 local VALID_PLAYER_LANGUAGE_SOURCES = {
     automatic = true,
     sync = true,
@@ -465,6 +496,8 @@ local function EnsureDatabaseDefaults()
 
     LanguageScoutDB.autoDetect = LanguageScoutDB.autoDetect ~= false
     EnsureChatDetectionChannels()
+    LanguageScoutDB.prefixOutgoingMessages = LanguageScoutDB.prefixOutgoingMessages ~= false
+    EnsureOutgoingPrefixChannels()
     LanguageScoutDB.syncGuild = LanguageScoutDB.syncGuild ~= false
     LanguageScoutDB.syncParty = LanguageScoutDB.syncParty ~= false
     LanguageScoutDB.autoMarkFeedback = LanguageScoutDB.autoMarkFeedback ~= false
