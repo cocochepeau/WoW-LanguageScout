@@ -24,11 +24,13 @@ Without a supported leading tag, distinctive characters and recognized localized
 
 Multi-word phrases match complete words in order, allowing extra whitespace and punctuation, including typographic apostrophes and dashes. For example, `merci beaucoup`, `MERCI, BEAUCOUP!`, and `merci—beaucoup` match the same French phrase. Phrase words must occur in one message. Repeating a weak word does not increase its score.
 
-German, French, Spanish, Russian, Ukrainian, Italian, and Portuguese include additional conversational phrases for finding groups, invitations, missing roles, travel, thanks, and greetings. You can add custom phrases in the automatic-detection settings.
+English, German, French, Spanish, Russian, Ukrainian, Italian, and Portuguese include additional conversational phrases for finding groups, invitations, missing roles, travel, thanks, and greetings. English uses multi-word phrases; isolated greetings and shared shorthand such as `hi`, `LFG`, `tank`, and `gg` do not identify English by themselves. You can add custom phrases in the automatic-detection settings.
 
 ## Supported languages
 
-German, Spanish, Russian, Ukrainian, French, Italian, Swedish, Norwegian, Danish, Turkish, Polish, Portuguese, Dutch, and Czech/Slovak.
+English, German, Spanish, Russian, Ukrainian, French, Italian, Swedish, Norwegian, Danish, Turkish, Polish, Portuguese, Dutch, and Czech/Slovak.
+
+English supports manual assignments, incoming and outgoing `[EN]` tags, automatic selection from `enUS`/`enGB`, and language sharing. Its flag icon uses the Union Jack.
 
 Each language has separate controls for its context-menu entry and automatic detection. You can also add custom detection keywords.
 

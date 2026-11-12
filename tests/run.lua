@@ -124,6 +124,7 @@ local function newAddon(savedDB, surnames, withSettings, locale, preferredSettin
                     { localeId = 1, localeName = "deDE" },
                     { localeId = 2, localeName = "frFR" },
                     { localeId = 3, localeName = "enUS" },
+                    { localeId = 4, localeName = "zhCN" },
                 }
             end
         end
@@ -901,7 +902,7 @@ end)
 test("effective language updates when the Forever preference arrives or changes", function()
     local preference = { loaded = false, localeID = 1 }
     local e = newAddon(nil, true, true, "enUS", preference)
-    assertEffectiveLanguage(e, e.ns.L("EFFECTIVE_LANGUAGE_UNAVAILABLE"))
+    assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("EN"))
     preference.loaded = true
     e.emit("PREFERRED_PLAY_SETTINGS_UPDATED")
     assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("DE"))
@@ -910,7 +911,7 @@ test("effective language updates when the Forever preference arrives or changes"
     assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("FR"))
     preference.localeID = 3
     e.emit("PREFERRED_PLAY_SETTINGS_UPDATED")
-    assertEffectiveLanguage(e, e.ns.L("EFFECTIVE_LANGUAGE_UNAVAILABLE"))
+    assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("EN"))
 end)
 
 test("preference updates preserve a manual own-language selection", function()
@@ -1242,14 +1243,14 @@ test("outgoing tags follow manual language and current Forever preferred languag
     preference.loaded = false
     equal(outgoing(e, "hello", "SAY"), "[DE] hello")
     preference.loaded = true; preference.localeID = 3
-    equal(outgoing(e, "hello", "SAY"), "[DE] hello")
+    equal(outgoing(e, "hello", "SAY"), "[EN] hello")
 end)
 
 test("Anniversary outgoing tags follow its supported client language", function()
     local e = newAddon(nil, false, nil, "frFR")
     equal(outgoing(e, "hello", "SAY"), "[FR] hello")
     e = newAddon(nil, false, nil, "enUS")
-    equal(outgoing(e, "hello", "SAY"), "hello")
+    equal(outgoing(e, "hello", "SAY"), "[EN] hello")
 end)
 
 test("outgoing prefixes preserve explicit language tags and do not duplicate across hooks", function()
@@ -1374,12 +1375,12 @@ for _, locale in ipairs({ "enUS", "deDE", "esES", "esMX", "frFR", "ruRU" }) do
         e.selectDropdown(dropdown, "DE")
         assertPreview("[DE]")
         e.selectDropdown(dropdown, nil)
-        local clientTag = ({ deDE = "[DE]", esES = "[ES]", esMX = "[ES]", frFR = "[FR]", ruRU = "[RU]" })[locale]
+        local clientTag = ({ enUS = "[EN]", deDE = "[DE]", esES = "[ES]", esMX = "[ES]", frFR = "[FR]", ruRU = "[RU]" })[locale]
         assertPreview(clientTag or e.ns.L("EFFECTIVE_LANGUAGE_UNAVAILABLE"))
     end)
 end
 
-for _, language in ipairs({ "DE", "ES", "RU", "UA", "FR", "IT", "SV", "NO", "DA", "TR", "PL", "PT", "NL", "CZSK" }) do
+for _, language in ipairs({ "EN", "DE", "ES", "RU", "UA", "FR", "IT", "SV", "NO", "DA", "TR", "PL", "PT", "NL", "CZSK" }) do
     test(language .. " tags work for outgoing messages and incoming detection", function()
         local e = newAddon({ myLanguage = language })
         local message = outgoing(e, "...", "SAY")
@@ -1489,7 +1490,7 @@ end)
 
 test("non-leading, malformed, linked and unsupported tags do not identify a language", function()
     for _, message in ipairs({ "... [FR]", "[FR]...", "[ FR ] ...", "[FRA] ...", "[XX] ...",
-        "[EN] ...", "[FR ...", "|Hitem:1|h[FR]|h ..." }) do
+        "[ENG] ...", "[FR ...", "|Hitem:1|h[FR]|h ..." }) do
         local e = newAddon()
         e.detect(message)
         equal(e.LanguageScoutDB.players["Target Tester"], nil, message)
@@ -1521,7 +1522,7 @@ for _, scenario in ipairs({
     { name = "missing preference API", configure = function(e) e.C_AccountServices = nil end },
     { name = "missing locale-list API", configure = function(e) e.GetAvailableLocaleInfo = nil end },
     { name = "unloaded preference", configure = function(_, preference) preference.loaded = false end },
-    { name = "unsupported preferred language", configure = function(_, preference) preference.localeID = 3 end },
+    { name = "unsupported preferred language", configure = function(_, preference) preference.localeID = 4 end },
     { name = "unrecognized preferred locale", configure = function(_, preference) preference.localeID = 999 end },
     { name = "preference API failure", configure = function(e)
         e.C_AccountServices.GetPreferredPlaySettings = function() error("unavailable") end
@@ -1556,7 +1557,7 @@ test("Forever fallback follows preference updates while preserving a manual over
     assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("DE"))
     equal(outgoing(e, "hello", "SAY"), "[DE] hello")
     e.selectDropdown(dropdown, "ES")
-    preference.localeID = 3
+    preference.localeID = 4
     e.emit("PREFERRED_PLAY_SETTINGS_UPDATED")
     assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("ES"))
     equal(outgoing(e, "hello", "SAY"), "[ES] hello")
@@ -1566,10 +1567,115 @@ test("Forever fallback follows preference updates while preserving a manual over
 end)
 
 test("Forever still reports unavailable when neither preference nor client is supported", function()
-    local e = newAddon(nil, true, true, "enUS", { loaded = true, localeID = 999 })
+    local e = newAddon(nil, true, true, "zhCN", { loaded = true, localeID = 999 })
     equal(e.ns.GetOwnEffectiveLanguage(), nil)
     assertEffectiveLanguage(e, e.ns.L("EFFECTIVE_LANGUAGE_UNAVAILABLE"))
     equal(outgoing(e, "hello", "SAY"), "hello")
+end)
+
+for _, locale in ipairs({ "enUS", "enGB" }) do
+    test(locale .. " selects English automatically on both clients", function()
+        for _, surnames in ipairs({ true, false }) do
+            local e = newAddon(nil, surnames, true, locale)
+            equal(e.ns.GetOwnEffectiveLanguage(), "EN")
+            assertEffectiveLanguage(e, "English")
+            equal(outgoing(e, "hello", "PARTY"), "[EN] hello")
+            local dropdown = ownLanguageDropdown(e)
+            e.selectDropdown(dropdown, "FR")
+            equal(e.ns.GetOwnEffectiveLanguage(), "FR")
+            e.selectDropdown(dropdown, nil)
+            equal(e.ns.GetOwnEffectiveLanguage(), "EN")
+        end
+    end)
+end
+
+test("English preferred language takes priority over a supported client fallback", function()
+    local e = newAddon(nil, true, true, "frFR", { loaded = true, localeID = 3 })
+    equal(e.ns.GetOwnEffectiveLanguage(), "EN")
+    assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("EN"))
+    equal(outgoing(e, "hello", "SAY"), "[EN] hello")
+end)
+
+for _, sample in ipairs({
+    { "enUS", "English" }, { "deDE", "Englisch" }, { "frFR", "Anglais" },
+    { "esES", "Inglés" }, { "esMX", "Inglés" }, { "ruRU", "Английский" },
+}) do
+    test(sample[1] .. " translates English in language selection", function()
+        local e = newAddon(nil, true, true, sample[1])
+        equal(e.ns.GetLanguageDisplayName("EN"), sample[2])
+        equal(e.ns.IsLanguageMarkEnabled("EN"), true)
+        equal(e.ns.IsLanguageAutoDetectEnabled("EN"), true)
+        e.selectDropdown(ownLanguageDropdown(e), "EN")
+        equal(e.LanguageScoutDB.myLanguage, "EN")
+        assertEffectiveLanguage(e, sample[2])
+    end)
+end
+
+test("English adds defaults without losing saved language choices or opt-outs", function()
+    local db = { myLanguage = "FR", languageOptions = { FR = { mark = false, autoDetect = false } },
+        players = { ["Known Tester"] = { lang = "DE", source = "manual", updatedAt = 10 } } }
+    local e = newAddon(db)
+    equal(e.ns.IsLanguageMarkEnabled("EN"), true)
+    equal(e.ns.IsLanguageAutoDetectEnabled("EN"), true)
+    equal(e.ns.IsLanguageMarkEnabled("FR"), false)
+    equal(e.ns.IsLanguageAutoDetectEnabled("FR"), false)
+    equal(e.ns.GetOwnEffectiveLanguage(), "FR")
+    equal(e.LanguageScoutDB.players["Known Tester"].lang, "DE")
+    e.ns.SetLanguageAutoDetectEnabled("EN", false)
+    e.ns.SetLanguageMarkEnabled("EN", false)
+    e = newAddon(e.LanguageScoutDB)
+    equal(e.ns.IsLanguageMarkEnabled("EN"), false)
+    equal(e.ns.IsLanguageAutoDetectEnabled("EN"), false)
+end)
+
+test("English phrases, explicit tags and custom keywords respect detection settings and undo", function()
+    local e = newAddon({ autoDetectWords = { EN = { "friendly unicorn" } } })
+    e.ns.SetLanguageAutoDetectEnabled("EN", false)
+    for _, message in ipairs({ "[EN] ...", "Can you invite me?", "friendly unicorn" }) do
+        e.detect(message)
+        equal(e.LanguageScoutDB.players["Target Tester"], nil)
+    end
+    e.ns.SetLanguageAutoDetectEnabled("EN", true)
+    e.detect("FRIENDLY---UNICORN!")
+    equal(e.LanguageScoutDB.players["Target Tester"].lang, "EN")
+    e.hooks.SetItemRef("languagescoutundo:Target Tester:EN")
+    for _, message in ipairs({ "[en] ...", "Can you invite me?", "friendly unicorn" }) do
+        e.detect(message)
+        equal(e.LanguageScoutDB.players["Target Tester"], nil)
+    end
+    e.ns.AllowPlayerLanguageAgain("Target Tester", "EN")
+    e.detect("Can you invite me?")
+    equal(e.LanguageScoutDB.players["Target Tester"].lang, "EN")
+end)
+
+test("English sharing supports ENTRY, BATCH and direct declarations with record protections", function()
+    local e = newAddon()
+    e.IsInGuild = function() return true end
+    e.ns.SetPlayerLanguage("Target Tester", "EN", true, "automatic")
+    equal(e.sent[1].msg, "ENTRY:Target Tester:EN")
+    e.receive("ENTRY:Other Tester:EN")
+    e.receive("BATCH1:Batch Tester:EN")
+    equal(e.LanguageScoutDB.players["Other Tester"].lang, "EN")
+    equal(e.LanguageScoutDB.players["Batch Tester"].lang, "EN")
+    e.receive("LANG:EN", "Other Tester", "WHISPER")
+    equal(e.LanguageScoutDB.players["Other Tester"].selfReported, true)
+    e.ns.SetPlayerLanguage("Manual Tester", "FR", false, "manual")
+    e.receive("LANG:EN", "Manual Tester", "WHISPER")
+    e.detect("[EN] ...", "Manual Tester")
+    equal(e.LanguageScoutDB.players["Manual Tester"].lang, "FR")
+    local _, message = e.filters.CHAT_MSG_PARTY[1](nil, "CHAT_MSG_PARTY", "hello", "Target Tester")
+    equal(message, "|TInterface\\AddOns\\LanguageScout\\flags\\EN.tga:12:18:0:0|t hello")
+end)
+
+test("English word detection leaves shared jargon unknown and mixed-language ties undecided", function()
+    for _, message in ipairs({ "hi", "hello", "thanks", "lfg tank healer dps", "gg wp brb afk lol", "invite please" }) do
+        local e = newAddon()
+        e.detect(message)
+        equal(e.LanguageScoutDB.players["Target Tester"], nil, message)
+    end
+    local e = newAddon()
+    e.detect("Can you invite me? Merci beaucoup!")
+    equal(e.LanguageScoutDB.players["Target Tester"], nil)
 end)
 
 print("Total: " .. passed .. " passed, " .. failed .. " failed")

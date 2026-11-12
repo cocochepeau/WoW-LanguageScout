@@ -225,6 +225,24 @@ local standaloneKeywordMap = {
 }
 
 local keywordMap = {
+    -- Shared game shorthand and isolated greetings are intentionally insufficient.
+    EN = {
+        "Looking for a group",
+        "Looking for more players",
+        "Can you invite me",
+        "Could you invite me",
+        "Please invite me",
+        "We need a tank",
+        "We need a healer",
+        "Can someone help me",
+        "Does anyone know",
+        "Anyone for a dungeon",
+        "Thanks for the group",
+        "Thank you very much",
+        "I am on my way",
+        "I'm on my way",
+        "English speaking guild",
+    },
     CZSK = {
         "CZ/SK",
         "SK/CZ",
@@ -1129,6 +1147,13 @@ local function DetectLanguageFromText(text, reasonKey, ignoreLanguageOptions)
 end
 
 local AUTO_DETECT_SELF_TEST_CASES = {
+    { text = "Looking for a group for tonight", expected = "EN" },
+    { text = "CAN YOU INVITE ME?", expected = "EN" },
+    { text = "I’m on my way", expected = "EN" },
+    { text = "Can someone help me with this quest?", expected = "EN" },
+    { text = "Thank you very much!", expected = "EN" },
+    { text = "Looking for a grouped player", expected = nil },
+    { text = "hi hello tank healer lfg gg", expected = nil },
     { text = "<Knejt Nejt> er en guild for de danske knejte og knejtinder. Vi er en social guild, der ønsker at hygge omkring spillet, og nyde alle aspekterne af WoW Forever. I længden ønsker vi at raide. Kom glad! /W for invite!", expected = "DA" },
     { text = "Goedemorgen! <Tsunami> Zoekt nederlandse spelers. Wij bestaan al vanaf 2004. Actief geweest in retail en classic en nu in Forever. Kom gezellig levelen en dungeons doen! /w voor een invite.", expected = "NL" },
     { text = "[Knejt Nejt] er en nyopstartet guild for de danske knejte og knejtinder. Vi er en social guild, der ønsker at hygge omkring spillet, og nyde alle aspekterne af WoW Forever. I længden ønsker vi at raide. Kom glad!", expected = "DA" },
@@ -1210,7 +1235,7 @@ local AUTO_DETECT_SELF_TEST_CASES = {
     { text = "<Dinolovers> LF Feral, Ret Pala & Ele or BM Hunter TK+SSC Mon 10th @ 20:25st. Raiders mostly BiS except for big items so mostly LF players happy to HR tier tokens, vortexes, patterns and other non big ticket items. /w for more info!", expected = nil },
     { text = "Brust", expected = nil },
     { text = "Brust gesucht", expected = "DE" },
-    { text = "we are looking for more players", expected = nil },
+    { text = "we are looking for more players", expected = "EN" },
     { text = "Er versucht es morgen.", expected = nil },
     { text = "Need a bandage for the tank.", expected = nil },
     { text = "Eine Beule am Kopf.", expected = nil },
@@ -1250,7 +1275,7 @@ local AUTO_DETECT_SELF_TEST_CASES = {
     { text = "Estou a caminho, um minuto", expected = "PT" },
 
     { text = "LF tank and healer, invite please", expected = nil },
-    { text = "Thanks for the group, see you later!", expected = nil },
+    { text = "Thanks for the group, see you later!", expected = "EN" },
     { text = "Group ready? Need one more player for a raid.", expected = nil },
     { text = "gg wp brb afk lol", expected = nil },
     { text = "pour pour pour", expected = nil },

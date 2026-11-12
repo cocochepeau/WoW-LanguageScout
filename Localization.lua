@@ -4,6 +4,7 @@ local CLIENT_LOCALE = GetLocale and GetLocale() or "enUS"
 local DEFAULT_LOCALE = "enUS"
 
 local esLanguageLabels = {
+    EN = "Inglés",
     DE = "Alemán",
     ES = "Español",
     RU = "Ruso",
@@ -153,6 +154,7 @@ local esLocalizedStrings = {
 
 local LANGUAGE_LABELS_BY_LOCALE = {
     deDE = {
+        EN = "Englisch",
         DE = "Deutsch",
         ES = "Spanisch",
         RU = "Russisch",
@@ -170,6 +172,7 @@ local LANGUAGE_LABELS_BY_LOCALE = {
     },
     enUS = {
         DE = "German",
+        EN = "English",
         ES = "Spanish",
         RU = "Russian",
         UA = "Ukrainian",
@@ -187,6 +190,7 @@ local LANGUAGE_LABELS_BY_LOCALE = {
     esES = esLanguageLabels,
     frFR = {
         DE = "Allemand",
+        EN = "Anglais",
         ES = "Espagnol",
         RU = "Russe",
         UA = "Ukrainien",
@@ -203,6 +207,7 @@ local LANGUAGE_LABELS_BY_LOCALE = {
     },
     ruRU = {
         DE = "Немецкий",
+        EN = "Английский",
         ES = "Испанский",
         RU = "Русский",
         UA = "Украинский",

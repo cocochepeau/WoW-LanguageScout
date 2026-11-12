@@ -42,7 +42,7 @@ local ADDON_PREFIX = "LMARK"
 local ADDON_VERSION = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(addonName, "Version"))
     or (GetAddOnMetadata and GetAddOnMetadata(addonName, "Version"))
     or "0"
-local SUPPORTED_LANGUAGES = { "DE", "ES", "RU", "UA", "FR", "IT", "SV", "NO", "DA", "TR", "PL", "PT", "NL", "CZSK" }
+local SUPPORTED_LANGUAGES = { "EN", "DE", "ES", "RU", "UA", "FR", "IT", "SV", "NO", "DA", "TR", "PL", "PT", "NL", "CZSK" }
 local SUPPORTED_LANGUAGE_LOOKUP = {}
 local DEFAULT_MARK_DISABLED_LANGUAGES = {
     IT = true,
@@ -56,6 +56,8 @@ local DEFAULT_MARK_DISABLED_LANGUAGES = {
     CZSK = true,
 }
 local CLIENT_LANGUAGE_BY_LOCALE = {
+    enUS = "EN",
+    enGB = "EN",
     deDE = "DE",
     esES = "ES",
     esMX = "ES",

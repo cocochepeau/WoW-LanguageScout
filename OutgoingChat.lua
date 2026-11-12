@@ -13,11 +13,11 @@ local function PrefixOutgoingMessage(message, chatType, maxBytes)
     local language = ns.GetOwnEffectiveLanguage()
     if not ns.IsSupportedLanguage(language) then return message end
 
-    -- Preserve explicit language tags, including English, rather than stacking tags.
+    -- Preserve explicit supported language tags rather than stacking tags.
     local existingTag = message:match("^%s*%[([%a]+)%]")
     if existingTag then
         existingTag = existingTag:upper()
-        if existingTag == "EN" or ns.IsSupportedLanguage(existingTag) then return message end
+        if ns.IsSupportedLanguage(existingTag) then return message end
     end
 
     local prefix = "[" .. language .. "] "
