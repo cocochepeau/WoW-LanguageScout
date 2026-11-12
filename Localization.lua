@@ -755,11 +755,11 @@ end
 local languageLabels = ResolveLocale(CLIENT_LOCALE, LANGUAGE_LABELS_BY_LOCALE)
 local localizedStrings = ResolveLocale(CLIENT_LOCALE, LOCALIZED_STRINGS_BY_LOCALE)
 local preferredAutoLabel = ResolveLocale(CLIENT_LOCALE, {
-    enUS = "Automatic (Preferred language)",
-    deDE = "Automatisch (bevorzugte Sprache)",
-    esES = "Automático (idioma preferido)",
-    frFR = "Automatique (langue préférée)",
-    ruRU = "Автоматически (предпочитаемый язык)",
+    enUS = "Automatic (preferred / client language)",
+    deDE = "Automatisch (bevorzugte / Clientsprache)",
+    esES = "Automático (idioma preferido / del cliente)",
+    frFR = "Automatique (langue préférée / du client)",
+    ruRU = "Автоматически (предпочитаемый / язык клиента)",
 })
 
 function ns.L(key)

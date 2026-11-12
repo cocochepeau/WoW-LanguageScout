@@ -921,9 +921,9 @@ test("preference updates preserve a manual own-language selection", function()
     assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("FR"))
 end)
 
-test("effective language reports unavailable when preference APIs are absent", function()
+test("effective language falls back to the client when preference APIs are absent", function()
     local e = newAddon(nil, true, true, "deDE")
-    assertEffectiveLanguage(e, e.ns.L("EFFECTIVE_LANGUAGE_UNAVAILABLE"))
+    assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("DE"))
 end)
 
 test("effective language uses the Anniversary client language", function()
@@ -1240,9 +1240,9 @@ test("outgoing tags follow manual language and current Forever preferred languag
     equal(outgoing(e, "hello", "SAY"), "[ES] hello")
     e.LanguageScoutDB.myLanguage = nil
     preference.loaded = false
-    equal(outgoing(e, "hello", "SAY"), "hello")
+    equal(outgoing(e, "hello", "SAY"), "[DE] hello")
     preference.loaded = true; preference.localeID = 3
-    equal(outgoing(e, "hello", "SAY"), "hello")
+    equal(outgoing(e, "hello", "SAY"), "[DE] hello")
 end)
 
 test("Anniversary outgoing tags follow its supported client language", function()
@@ -1374,7 +1374,8 @@ for _, locale in ipairs({ "enUS", "deDE", "esES", "esMX", "frFR", "ruRU" }) do
         e.selectDropdown(dropdown, "DE")
         assertPreview("[DE]")
         e.selectDropdown(dropdown, nil)
-        assertPreview(e.ns.L("EFFECTIVE_LANGUAGE_UNAVAILABLE"))
+        local clientTag = ({ deDE = "[DE]", esES = "[ES]", esMX = "[ES]", frFR = "[FR]", ruRU = "[RU]" })[locale]
+        assertPreview(clientTag or e.ns.L("EFFECTIVE_LANGUAGE_UNAVAILABLE"))
     end)
 end
 
@@ -1515,6 +1516,61 @@ for _, locale in ipairs({ "enUS", "deDE", "esES", "esMX", "frFR", "ruRU" }) do
         assert(e.messages[#e.messages]:find(string.format(e.ns.L("AUTO_REASON_CHAT_PREFIX"), "[FR]"), 1, true))
     end)
 end
+
+for _, scenario in ipairs({
+    { name = "missing preference API", configure = function(e) e.C_AccountServices = nil end },
+    { name = "missing locale-list API", configure = function(e) e.GetAvailableLocaleInfo = nil end },
+    { name = "unloaded preference", configure = function(_, preference) preference.loaded = false end },
+    { name = "unsupported preferred language", configure = function(_, preference) preference.localeID = 3 end },
+    { name = "unrecognized preferred locale", configure = function(_, preference) preference.localeID = 999 end },
+    { name = "preference API failure", configure = function(e)
+        e.C_AccountServices.GetPreferredPlaySettings = function() error("unavailable") end
+    end },
+    { name = "locale-list API failure", configure = function(e)
+        e.GetAvailableLocaleInfo = function() error("unavailable") end
+    end },
+    { name = "invalid locale-list response", configure = function(e)
+        e.GetAvailableLocaleInfo = function() return false end
+    end },
+}) do
+    test("Forever client-language fallback handles " .. scenario.name, function()
+        local preference = { loaded = true, localeID = 1 }
+        local e = newAddon(nil, true, true, "frFR", preference)
+        equal(e.ns.GetOwnEffectiveLanguage(), "DE", "supported preference wins over client language")
+        scenario.configure(e, preference)
+        e.emit("PREFERRED_PLAY_SETTINGS_UPDATED")
+        equal(e.ns.GetOwnEffectiveLanguage(), "FR")
+        assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("FR"))
+        equal(outgoing(e, "bonjour", "SAY"), "[FR] bonjour")
+    end)
+end
+
+test("Forever fallback follows preference updates while preserving a manual override", function()
+    local preference = { loaded = false, localeID = 1 }
+    local e = newAddon(nil, true, true, "frFR", preference)
+    local dropdown = ownLanguageDropdown(e)
+    assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("FR"))
+    equal(outgoing(e, "hello", "SAY"), "[FR] hello")
+    preference.loaded = true
+    e.emit("PREFERRED_PLAY_SETTINGS_UPDATED")
+    assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("DE"))
+    equal(outgoing(e, "hello", "SAY"), "[DE] hello")
+    e.selectDropdown(dropdown, "ES")
+    preference.localeID = 3
+    e.emit("PREFERRED_PLAY_SETTINGS_UPDATED")
+    assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("ES"))
+    equal(outgoing(e, "hello", "SAY"), "[ES] hello")
+    e.selectDropdown(dropdown, nil)
+    assertEffectiveLanguage(e, e.ns.GetLanguageDisplayName("FR"))
+    equal(outgoing(e, "hello", "SAY"), "[FR] hello")
+end)
+
+test("Forever still reports unavailable when neither preference nor client is supported", function()
+    local e = newAddon(nil, true, true, "enUS", { loaded = true, localeID = 999 })
+    equal(e.ns.GetOwnEffectiveLanguage(), nil)
+    assertEffectiveLanguage(e, e.ns.L("EFFECTIVE_LANGUAGE_UNAVAILABLE"))
+    equal(outgoing(e, "hello", "SAY"), "hello")
+end)
 
 print("Total: " .. passed .. " passed, " .. failed .. " failed")
 assert(failed == 0, "LanguageScout test failures")

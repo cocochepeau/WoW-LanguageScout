@@ -42,7 +42,7 @@ You can also open **Settings → AddOns → LanguageScout**.
 
 ## Your language
 
-Select a language in settings or leave it on **Automatic**. On Forever, Automatic uses your supported preferred language; on Anniversary, it uses your supported client language. The effective-language display shows the result, including when no supported language is available.
+Select a language in settings or leave it on **Automatic**. Manual selection always takes priority. On Forever, Automatic uses your supported preferred language, falling back to your supported client/UI language if the preference is unavailable, still loading, or unsupported. Once a supported preference arrives, it takes priority again. On Anniversary, Automatic uses your supported client language. The effective-language display shows the result, including when neither source provides a supported language.
 
 ## Outgoing language tags
 

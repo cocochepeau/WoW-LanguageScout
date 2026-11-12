@@ -865,9 +865,9 @@ local function GetOwnEffectiveLanguage()
     end
 
     if ns.UsesSurnames then
-        -- An unavailable or unsupported preference must not become a different
-        -- language just because the UI uses a supported client locale.
-        return GetPreferredLanguage()
+        -- Use a supported preference first; fall back while it is unavailable
+        -- or when the preferred language is not supported by the addon.
+        return GetPreferredLanguage() or GetClientLanguage()
     end
     return GetClientLanguage()
 end
