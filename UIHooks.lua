@@ -139,19 +139,23 @@ ns.MarkPlayerLanguageCacheDirty = function()
     end
 end
 
-local function GetFlagTextureMarkup(lang, size)
+local function GetFlagTextureMarkup(lang, size, width)
     if not lang then
         return ""
     end
 
     size = size or 14
-    local cacheKey = lang .. ":" .. size
+    local dimensions = tostring(size)
+    if width then
+        dimensions = dimensions .. ":" .. width .. ":0:0"
+    end
+    local cacheKey = lang .. ":" .. dimensions
     local cachedMarkup = flagTextureMarkupCache[cacheKey]
     if cachedMarkup then
         return cachedMarkup
     end
 
-    cachedMarkup = "|T" .. FLAG_TEXTURE_PREFIX .. lang .. ".tga:" .. size .. "|t"
+    cachedMarkup = "|T" .. FLAG_TEXTURE_PREFIX .. lang .. ".tga:" .. dimensions .. "|t"
     flagTextureMarkupCache[cacheKey] = cachedMarkup
     return cachedMarkup
 end
@@ -455,7 +459,8 @@ local function ChatFilter(_, event, msg, author, ...)
     local record = playerKey and LanguageScoutDB.players[playerKey]
     local lang = record and record.lang
     if lang then
-        msg = GetFlagTextureMarkup(lang, 14) .. " " .. msg
+        -- Explicit height and width keep flags centred and leave room between chat lines.
+        msg = GetFlagTextureMarkup(lang, 12, 18) .. " " .. msg
     end
 
     if ns.DebugPerfStop then
