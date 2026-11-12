@@ -1,6 +1,6 @@
 -- Native Lua 5.1 can also run this from the addon directory: lua tests/run.lua
 local root = addonRoot or "."
-local files = { "Localization.lua", "Core.lua", "PlayerData.lua", "UIHooks.lua", "OutgoingChat.lua", "AutoDetect.lua", "Sync.lua", "Options.lua" }
+local files = { "Localization.lua", "Core.lua", "PlayerData.lua", "UIHooks.lua", "Nameplates.lua", "OutgoingChat.lua", "AutoDetect.lua", "Sync.lua", "Options.lua" }
 local manifest = assert(io.open(root .. "/LanguageScout.toc", "rb"))
 local addonVersion = assert(manifest:read("*a"):match("## Version:%s*([^\r\n]+)"))
 manifest:close()
@@ -1677,6 +1677,280 @@ test("English word detection leaves shared jargon unknown and mixed-language tie
     e.detect("Can you invite me? Merci beaucoup!")
     equal(e.LanguageScoutDB.players["Target Tester"], nil)
 end)
+
+local function nameplateFixture(withSettings, savedDB, locale)
+    local e = newAddon(savedDB, true, withSettings, locale)
+    local plates, order = {}, {}
+    local updater
+    for _, frame in ipairs(e.frames) do
+        if frame.events.NAME_PLATE_UNIT_ADDED and frame.events.NAME_PLATE_UNIT_REMOVED then updater = frame end
+    end
+    assert(updater, "missing nameplate event handler")
+    e.plateApiCalls = 0
+    e.C_NamePlate = {
+        GetNamePlateForUnit = function(unit, includeForbidden)
+            equal(includeForbidden, false, "forbidden nameplates must never be requested")
+            e.plateApiCalls = e.plateApiCalls + 1
+            return plates[unit]
+        end,
+        GetNamePlates = function()
+            local visible = {}
+            for _, unit in ipairs(order) do if plates[unit] then visible[#visible + 1] = plates[unit] end end
+            return visible
+        end,
+    }
+    e.UnitIsPlayer = function(unit) return e.units[unit] ~= nil and e.units[unit].player ~= false end
+    e.UnitGUID = function(unit) return e.units[unit] and "Player-" .. unit end
+    function e.addPlate(unit, playerName, isPlayer)
+        e.units[unit] = { name = playerName, realm = "TestRealm", player = isPlayer }
+        local name = { width = 140, textWidth = 100, justify = "CENTER", shown = true }
+        function name:IsForbidden() return self.forbidden end
+        function name:IsShown() return self.shown end
+        function name:GetWidth() return self.width end
+        function name:GetStringWidth() return self.textWidth end
+        function name:GetJustifyH() return self.justify end
+        local unitFrame = { unit = unit, name = name, textures = {} }
+        function unitFrame:IsForbidden() return self.forbidden end
+        function unitFrame:CreateTexture()
+            assert(not self.forbidden, "cannot create textures on a forbidden frame")
+            local texture = { parent = self, shown = false, writes = 0 }
+            function texture:IsForbidden() return self.parent.forbidden end
+            local function write(self)
+                assert(not self:IsForbidden(), "cannot modify a forbidden texture")
+                self.writes = self.writes + 1
+            end
+            function texture:Hide() write(self); self.shown = false end
+            function texture:Show() write(self); self.shown = true end
+            function texture:ClearAllPoints() write(self); self.point = nil end
+            function texture:SetPoint(...) write(self); self.point = { ... } end
+            function texture:SetSize(w, h) write(self); self.width, self.height = w, h end
+            function texture:SetTexture(path) write(self); self.texture = path end
+            self.textures[#self.textures + 1] = texture
+            return texture
+        end
+        local plate = { UnitFrame = unitFrame, namePlateUnitToken = unit }
+        function plate:IsForbidden() return self.forbidden end
+        function plate:GetUnit() return self.namePlateUnitToken end
+        plates[unit] = plate
+        order[#order + 1] = unit
+        return plate, unitFrame, name
+    end
+    function e.plateTick()
+        if updater.scripts.OnUpdate then updater.scripts.OnUpdate(updater, 0.2) end
+    end
+    e.nameplateUpdater, e.nameplates = updater, plates
+    return e
+end
+
+test("nameplate flags start off and do not query plates or create textures", function()
+    local e = nameplateFixture()
+    local _, unitFrame = e.addPlate("nameplate1", "Target Tester")
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    e.emit("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    e.emit("PLAYER_LOGIN")
+    equal(e.LanguageScoutDB.nameplateFlagPosition, "off")
+    equal(e.plateApiCalls, 0)
+    equal(#unitFrame.textures, 0)
+    equal(e.nameplateUpdater.scripts.OnUpdate, nil)
+end)
+
+test("nameplate position follows visible name text for left, center and right alignment", function()
+    local e = nameplateFixture()
+    local _, unitFrame, name = e.addPlate("nameplate1", "Target Tester")
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    for _, sample in ipairs({
+        { "LEFT", "left", "RIGHT", "LEFT", -4 }, { "LEFT", "right", "LEFT", "RIGHT", -36 },
+        { "CENTER", "left", "RIGHT", "LEFT", 16 }, { "CENTER", "right", "LEFT", "RIGHT", -16 },
+        { "RIGHT", "left", "RIGHT", "LEFT", 36 }, { "RIGHT", "right", "LEFT", "RIGHT", 4 },
+    }) do
+        name.justify = sample[1]
+        equal(e.ns.SetNameplateFlagPosition(sample[2]), true)
+        local flag = unitFrame.textures[1]
+        equal(flag.shown, true)
+        equal(flag.texture, "Interface\\AddOns\\LanguageScout\\flags\\FR.tga")
+        equal(flag.width, 18); equal(flag.height, 12)
+        equal(flag.point[1], sample[3]); equal(flag.point[2], name)
+        equal(flag.point[3], sample[4]); equal(flag.point[4], sample[5]); equal(flag.point[5], 0)
+    end
+    equal(#unitFrame.textures, 1, "position changes must reuse the texture")
+    name.textWidth = 200
+    e.ns.SetNameplateFlagPosition("right")
+    equal(unitFrame.textures[1].point[4], 4, "clipped text uses the font-string boundary")
+    e.ns.SetNameplateFlagPosition("off")
+    equal(unitFrame.textures[1].shown, false)
+    equal(e.nameplateUpdater.scripts.OnUpdate, nil)
+end)
+
+test("nameplate flags skip unknown players, pets, NPCs and conflicting surnames", function()
+    local e = nameplateFixture()
+    local _, unknown = e.addPlate("nameplate1", "Unknown Tester")
+    local _, pet = e.addPlate("nameplate2", "Pet Tester", false)
+    local _, npc = e.addPlate("nameplate3", "Npc Tester", false)
+    local _, surname = e.addPlate("nameplate4", "Target Other")
+    for _, key in ipairs({ "Target Tester", "Pet Tester", "Npc Tester" }) do
+        e.ns.SetPlayerLanguage(key, "FR", false, "manual")
+    end
+    e.ns.SetNameplateFlagPosition("left")
+    for _, unitFrame in ipairs({ unknown, pet, npc, surname }) do equal(#unitFrame.textures, 0) end
+end)
+
+test("nameplate flags refresh when languages are detected, changed, removed or names change", function()
+    local e = nameplateFixture()
+    local _, unitFrame, name = e.addPlate("nameplate1", "Target Tester")
+    e.ns.SetNameplateFlagPosition("left")
+    equal(#unitFrame.textures, 0)
+    e.detect("[FR] ...", "Target Tester")
+    e.plateTick()
+    local flag = unitFrame.textures[1]
+    equal(flag.shown, true)
+    equal(flag.texture, "Interface\\AddOns\\LanguageScout\\flags\\FR.tga")
+    e.ns.SetPlayerLanguage("Target Tester", "EN", false, "manual")
+    e.plateTick()
+    equal(flag.texture, "Interface\\AddOns\\LanguageScout\\flags\\EN.tga")
+    name.shown = false; e.plateTick(); equal(flag.shown, false)
+    name.shown = true; e.plateTick(); equal(flag.shown, true)
+    e.ns.RemovePlayerLanguage("Target Tester"); e.plateTick(); equal(flag.shown, false)
+    e.ns.SetPlayerLanguage("Other Tester", "DE", false, "manual")
+    e.units.nameplate1.name = "Other Tester"
+    e.emit("UNIT_NAME_UPDATE", "nameplate1")
+    equal(flag.texture, "Interface\\AddOns\\LanguageScout\\flags\\DE.tga")
+    equal(flag.shown, true)
+end)
+
+test("nameplate removal and pooled unit frames do not leak another player's flag", function()
+    local e = nameplateFixture()
+    local plate, unitFrame = e.addPlate("nameplate1", "Target Tester")
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    e.ns.SetPlayerLanguage("Other Tester", "DE", false, "manual")
+    e.ns.SetNameplateFlagPosition("right")
+    local flag = unitFrame.textures[1]
+    e.emit("NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    equal(flag.shown, false)
+    e.units.nameplate1.name = "Unknown Tester"
+    e.emit("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    equal(flag.shown, false)
+    e.units.nameplate1.name = "Target Tester"
+    e.emit("NAME_PLATE_UNIT_ADDED", "nameplate1")
+    equal(flag.shown, true)
+    e.nameplates.nameplate1 = nil
+    e.nameplates.nameplate2 = plate
+    e.units.nameplate2 = { name = "Other Tester", realm = "TestRealm" }
+    plate.namePlateUnitToken, unitFrame.unit = "nameplate2", "nameplate2"
+    e.emit("NAME_PLATE_UNIT_ADDED", "nameplate2")
+    e.emit("NAME_PLATE_UNIT_REMOVED", "nameplate1")
+    equal(flag.shown, true, "a stale removal must not hide the new owner's flag")
+    equal(flag.texture, "Interface\\AddOns\\LanguageScout\\flags\\DE.tga")
+    equal(#unitFrame.textures, 1)
+end)
+
+test("restricted nameplate frames and names are skipped without creating textures", function()
+    for _, target in ipairs({ "plate", "frame", "name" }) do
+        local e = nameplateFixture()
+        local plate, unitFrame, name = e.addPlate("nameplate1", "Target Tester")
+        e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+        if target == "plate" then plate.forbidden = true
+        elseif target == "frame" then unitFrame.forbidden = true
+        else name.forbidden = true end
+        e.ns.SetNameplateFlagPosition("left")
+        e.emit("NAME_PLATE_UNIT_ADDED", "nameplate1")
+        equal(#unitFrame.textures, 0)
+    end
+end)
+
+test("nameplate flags avoid modifying regions that become forbidden", function()
+    local e = nameplateFixture()
+    local _, unitFrame = e.addPlate("nameplate1", "Target Tester")
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    e.ns.SetNameplateFlagPosition("left")
+    local flag = unitFrame.textures[1]
+    local writes = flag.writes
+    unitFrame.forbidden = true
+    e.plateTick()
+    e.ns.SetNameplateFlagPosition("off")
+    equal(flag.writes, writes)
+end)
+
+test("nameplate flags skip secret unit tokens, names and geometry", function()
+    local e = nameplateFixture()
+    local secret = {}
+    e.issecretvalue = function(value) return value == secret end
+    local plate1 = e.addPlate("nameplate1", "Unknown Tester")
+    plate1.GetUnit = function() return secret end
+    local _, unitFrame, name = e.addPlate("nameplate2", "Target Tester")
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    e.ns.SetNameplateFlagPosition("left")
+    equal(unitFrame.textures[1].shown, true, "one secret plate must not prevent other flags")
+    name.textWidth = secret
+    e.plateTick()
+    equal(unitFrame.textures[1].shown, false)
+    name.textWidth = 100
+    name.justify = secret
+    e.plateTick()
+    equal(unitFrame.textures[1].shown, false)
+    name.justify = "CENTER"
+    name.shown = secret
+    e.plateTick()
+    equal(unitFrame.textures[1].shown, false)
+    name.shown = true
+    e.units.nameplate2.name = secret
+    e.plateTick()
+    equal(unitFrame.textures[1].shown, false)
+    e.emit("NAME_PLATE_UNIT_ADDED", secret)
+    e.emit("NAME_PLATE_UNIT_REMOVED", secret)
+end)
+
+test("nameplate settings validate saved values and tolerate absent or late client APIs", function()
+    for _, value in ipairs({ "invalid", false, {}, 42 }) do
+        local e = newAddon({ nameplateFlagPosition = value })
+        equal(e.LanguageScoutDB.nameplateFlagPosition, "off")
+        equal(e.ns.SetNameplateFlagPosition("invalid"), false)
+        equal(e.LanguageScoutDB.nameplateFlagPosition, "off")
+        equal(e.ns.SetNameplateFlagPosition("left"), true)
+        e = newAddon(e.LanguageScoutDB)
+        equal(e.LanguageScoutDB.nameplateFlagPosition, "left")
+    end
+    local e = nameplateFixture(false, { nameplateFlagPosition = "right", displayFlagsInChat = false,
+        displayFlagsInTooltip = false })
+    local plate, unitFrame = e.addPlate("nameplate1", "Target Tester")
+    plate.GetUnit = nil -- Legacy clients can expose the unit token as a field.
+    e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+    e.emit("PLAYER_ENTERING_WORLD")
+    equal(unitFrame.textures[1].shown, true)
+    equal(unitFrame.textures[1].point[1], "LEFT")
+end)
+
+for _, locale in ipairs({ "enUS", "deDE", "esES", "esMX", "frFR", "ruRU" }) do
+    test(locale .. " translates nameplate settings and applies Off, Left and Right immediately", function()
+        local e = nameplateFixture(true, nil, locale)
+        for _, key in ipairs({ "NAMEPLATES", "NAMEPLATES_DESCRIPTION", "NAMEPLATE_FLAG_POSITION",
+            "NAMEPLATE_FLAG_OFF", "NAMEPLATE_FLAG_LEFT", "NAMEPLATE_FLAG_RIGHT" }) do
+            assert(e.ns.L(key) ~= key, key)
+        end
+        local panel, dropdown
+        for _, category in ipairs(e.categories) do
+            if category.title == e.ns.L("NAMEPLATES") then panel = category.frame end
+        end
+        assert(panel, "missing nameplate settings")
+        for _, widget in ipairs(e.widgets) do
+            if widget.parent == panel and widget.initialize then dropdown = widget end
+        end
+        assert(dropdown)
+        panel:Show()
+        equal(dropdown.selectedValue, "off")
+        local _, unitFrame = e.addPlate("nameplate1", "Target Tester")
+        e.ns.SetPlayerLanguage("Target Tester", "FR", false, "manual")
+        e.selectDropdown(dropdown, "left")
+        equal(unitFrame.textures[1].shown, true)
+        equal(dropdown.text, e.ns.L("NAMEPLATE_FLAG_LEFT"))
+        e.selectDropdown(dropdown, "right")
+        equal(unitFrame.textures[1].point[1], "LEFT")
+        equal(dropdown.text, e.ns.L("NAMEPLATE_FLAG_RIGHT"))
+        e.StaticPopupDialogs.LANGUAGESCOUT_RESTORE_DEFAULTS.OnAccept()
+        equal(e.LanguageScoutDB.nameplateFlagPosition, "off")
+        equal(dropdown.selectedValue, "off")
+        equal(unitFrame.textures[1].shown, false)
+    end)
+end
 
 print("Total: " .. passed .. " passed, " .. failed .. " failed")
 assert(failed == 0, "LanguageScout test failures")

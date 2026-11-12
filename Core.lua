@@ -509,6 +509,9 @@ local function EnsureDatabaseDefaults()
     LanguageScoutDB.displayFlagsInChat = LanguageScoutDB.displayFlagsInChat ~= false
     LanguageScoutDB.displayFlagsInTooltip = LanguageScoutDB.displayFlagsInTooltip ~= false
     LanguageScoutDB.displayFlagsInLFG = LanguageScoutDB.displayFlagsInLFG ~= false
+    if LanguageScoutDB.nameplateFlagPosition ~= "left" and LanguageScoutDB.nameplateFlagPosition ~= "right" then
+        LanguageScoutDB.nameplateFlagPosition = "off"
+    end
     LanguageScoutDB.debugPerformance = LanguageScoutDB.debugPerformance == true
 
     local debugThreshold = tonumber(LanguageScoutDB.debugPerformanceThreshold)
@@ -875,6 +878,16 @@ local function GetOwnEffectiveLanguage()
 end
 
 ns.GetOwnEffectiveLanguage = GetOwnEffectiveLanguage
+
+ns.SetNameplateFlagPosition = function(position)
+    if ns.IsSecret(position) or (position ~= "off" and position ~= "left" and position ~= "right") then
+        return false
+    end
+    LanguageScoutDB.nameplateFlagPosition = position
+    if ns.RefreshNameplateFlags then ns.RefreshNameplateFlags() end
+    if ns.RefreshNameplateOptions then ns.RefreshNameplateOptions() end
+    return true
+end
 
 local function ShowManualLanguageMarkedMessage(playerName, lang)
     if not LanguageScoutDB.manualMarkFeedback then

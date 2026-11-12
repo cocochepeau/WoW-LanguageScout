@@ -236,6 +236,7 @@ local guildPanel = CreateFrame("Frame")
 local resetPanel = CreateFrame("Frame")
 local undonePanel = CreateFrame("Frame")
 local outgoingPanel = CreateFrame("Frame")
+local nameplatePanel = CreateFrame("Frame")
 
 -- Settings canvas frames must start hidden so their first category visit
 -- reliably produces OnShow and initializes the page immediately.
@@ -247,6 +248,7 @@ guildPanel:Hide()
 resetPanel:Hide()
 undonePanel:Hide()
 outgoingPanel:Hide()
+nameplatePanel:Hide()
 
 local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
 title:SetPoint("TOPLEFT", 16, -16)
@@ -365,6 +367,7 @@ local function RestoreRecommendedDefaults()
     LanguageScoutDB.displayFlagsInTooltip = true
     LanguageScoutDB.displayFlagsInGuild = true
     LanguageScoutDB.displayFlagsInLFG = true
+    ns.SetNameplateFlagPosition("off")
     LanguageScoutDB.debugPerformance = false
     LanguageScoutDB.debugPerformanceThreshold = 10
     CharacterDB.displayFlagsInGuild = true
@@ -1732,6 +1735,43 @@ do
     ns.RefreshOutgoingPrefixPanel()
 end
 
+do
+    local heading = nameplatePanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    heading:SetPoint("TOPLEFT", 16, -16)
+    heading:SetText(GetPanelTitle("NAMEPLATES"))
+
+    local description = nameplatePanel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    description:SetPoint("TOPLEFT", heading, "BOTTOMLEFT", 0, -12)
+    description:SetWidth(560)
+    description:SetJustifyH("LEFT")
+    description:SetText(L("NAMEPLATES_DESCRIPTION"))
+
+    local label = nameplatePanel:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    label:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -24)
+    label:SetText(L("NAMEPLATE_FLAG_POSITION"))
+
+    local positionDropdown = CreateFrame("Frame", nil, nameplatePanel, "UIDropDownMenuTemplate")
+    positionDropdown:SetPoint("TOPLEFT", label, "BOTTOMLEFT", -16, -8)
+    UIDropDownMenu_SetWidth(positionDropdown, 160)
+    local labels = { off = "NAMEPLATE_FLAG_OFF", left = "NAMEPLATE_FLAG_LEFT", right = "NAMEPLATE_FLAG_RIGHT" }
+    UIDropDownMenu_Initialize(positionDropdown, function()
+        for _, position in ipairs({ "off", "left", "right" }) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text, info.value = L(labels[position]), position
+            info.checked = LanguageScoutDB.nameplateFlagPosition == position
+            info.func = function() ns.SetNameplateFlagPosition(position) end
+            UIDropDownMenu_AddButton(info)
+        end
+    end)
+    ns.RefreshNameplateOptions = function()
+        local position = LanguageScoutDB.nameplateFlagPosition
+        UIDropDownMenu_SetSelectedValue(positionDropdown, position)
+        UIDropDownMenu_SetText(positionDropdown, L(labels[position] or labels.off))
+    end
+    nameplatePanel:SetScript("OnShow", ns.RefreshNameplateOptions)
+    ns.RefreshNameplateOptions()
+end
+
 category = Settings.RegisterCanvasLayoutCategory(panel, "LanguageScout")
 Settings.RegisterAddOnCategory(category)
 
@@ -1739,6 +1779,7 @@ languagesCategory = RegisterPanelCategory(category, languagesPanel, "LANGUAGES")
 autoCategory = RegisterPanelCategory(category, autoDetectPanel, "AUTO_DETECT")
 syncCategory = RegisterPanelCategory(category, syncPanel, "SYNC")
 RegisterPanelCategory(category, outgoingPanel, "OUTGOING_MESSAGES")
+RegisterPanelCategory(category, nameplatePanel, "NAMEPLATES")
 guildCategory = RegisterPanelCategory(category, guildPanel, "GUILD_ASSIGNMENTS")
 resetCategory = RegisterPanelCategory(category, resetPanel, "RESET")
 RegisterPanelCategory(category, undonePanel, "UNDONE_GUESSES")
