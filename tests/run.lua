@@ -1020,11 +1020,20 @@ test("new commands open the renamed settings", function()
     assert(e.messages[#e.messages]:find(expected, 1, true))
 end)
 
-test("new chat flags use the LanguageScout install folder", function()
+test("chat flags use compact rectangular dimensions without changing message data", function()
     local e = newAddon()
     e.ns.SetPlayerLanguage("Target Tester", "DE", false, "manual")
-    local _, msg = e.filters.CHAT_MSG_PARTY[1](nil, "CHAT_MSG_PARTY", "hello", "Target Tester")
-    assert(msg:find("|TInterface\\AddOns\\LanguageScout\\flags\\DE.tga:14|t", 1, true))
+    for _, event in ipairs({
+        "CHAT_MSG_CHANNEL", "CHAT_MSG_GUILD", "CHAT_MSG_PARTY", "CHAT_MSG_PARTY_LEADER",
+        "CHAT_MSG_RAID", "CHAT_MSG_RAID_LEADER", "CHAT_MSG_INSTANCE_CHAT",
+        "CHAT_MSG_INSTANCE_CHAT_LEADER", "CHAT_MSG_SAY", "CHAT_MSG_YELL",
+    }) do
+        local blocked, msg, author, extra = e.filters[event][1](nil, event, "hello", "Target Tester", "preserved")
+        equal(blocked, false)
+        equal(msg, "|TInterface\\AddOns\\LanguageScout\\flags\\DE.tga:12:18:0:0|t hello")
+        equal(author, "Target Tester")
+        equal(extra, "preserved")
+    end
 end)
 
 test("renamed addon still sends and receives the legacy communication protocol", function()
@@ -1117,9 +1126,9 @@ test("equally strong mixed-language phrases remain undecided", function()
     equal(e.LanguageScoutDB.players["Mixed Tester"], nil)
 end)
 
-test("release metadata starts the LanguageScout version sequence at 1.0.0", function()
+test("release metadata reports LanguageScout 1.0.1", function()
     local e = newAddon()
-    equal(e.ns.ADDON_VERSION, "1.0.0")
+    equal(e.ns.ADDON_VERSION, "1.0.1")
 end)
 
 test("older addon version sequences cannot trigger a false update warning", function()
@@ -1128,11 +1137,12 @@ test("older addon version sequences cannot trigger a false update warning", func
     e.receive("VER:WoWLingo:9.0.0")
     e.receive("VER:LanguageScout:1.0.0")
     e.receive("VER:LanguageScout:0.9.0")
-    equal(#e.messages, 0)
     e.receive("VER:LanguageScout:1.0.1")
+    equal(#e.messages, 0)
+    e.receive("VER:LanguageScout:1.0.2")
     equal(#e.messages, 1)
     equal(e.messages[1], e.ns.L("VERSION_OUTDATED_MESSAGE"))
-    e.receive("VER:LanguageScout:1.0.1")
+    e.receive("VER:LanguageScout:1.0.2")
     equal(#e.messages, 1)
 end)
 
@@ -1140,7 +1150,7 @@ test("version announcements identify the renamed product", function()
     local e = newAddon()
     e.IsInGuild = function() return true end
     e.emit("PLAYER_GUILD_UPDATE")
-    equal(e.sent[1].msg, "VER:LanguageScout:1.0.0")
+    equal(e.sent[1].msg, "VER:LanguageScout:1.0.1")
     equal(e.sent[1].prefix, "LMARK")
 end)
 
