@@ -2,6 +2,8 @@
 
 LanguageScout helps you find players who speak your language in WoW Forever and Anniversary. It adds language flags to chat and player tooltips, learns from chat and other clues, and shares known languages with other addon users.
 
+https://www.curseforge.com/wow/addons/languagescout
+
 ## Features
 
 - Detect languages from chat words and phrases, distinctive characters, and recognized Questie announcements.
